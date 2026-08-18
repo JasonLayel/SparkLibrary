@@ -253,7 +253,9 @@ const state = {
   timerDur:60, timerLeft:0, timerOn:false, exportMsg:"",
   gesture: { on:false, plan:[], idx:0, preset:"warmup", doneMsg:"" },
   activeSource:null,                                     // 'folder' | 'photos' | 'drive'
-  gd: JSON.parse(localStorage.getItem("sparkst_gd")||'{"clientId":"","folderLink":"","folderId":""}'),
+  // Baked-in Google Drive defaults so the Connect fields are pre-filled and auto-connect
+  // on any fresh device/browser. A saved sparkst_gd in localStorage still takes precedence.
+  gd: JSON.parse(localStorage.getItem("sparkst_gd")||'{"clientId":"299109778033-28rq0jibmcr55oubeps0cr7553vummhm.apps.googleusercontent.com","folderLink":"https://drive.google.com/drive/folders/1NFf9GPJrCgV_YHfJeT6mWNXzsp-WThO-","folderId":"1NFf9GPJrCgV_YHfJeT6mWNXzsp-WThO-"}'),
   gdMsg:"", gdBusy:false, token:null, tokenExp:0, currentUrl:null, loadErr:false, metaId:null,
   lightbox:{ open:false, kind:"favorites", index:0, url:null, loadErr:false },
 };
