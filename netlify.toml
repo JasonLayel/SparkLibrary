@@ -1,0 +1,4 @@
+# Spark Studio is a single self-contained static index.html (no backend, no build step).
+# Netlify just serves the repo root as-is.
+[build]
+  publish = "."
