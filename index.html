@@ -1,0 +1,995 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Spark Studio</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:ital,wght@0,500;0,600;0,700;1,500&family=Inter:wght@400;500;600&family=Share+Tech+Mono&display=swap');
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  :root{
+    --bg:#080a11; --mat:#0e1220; --line:#1d2942; --line2:#2b3d61;
+    --ink:#dfeaff; --muted:#7c89ad;
+    --gold:#26e7ff; --gold-dim:#1a93b4;      /* primary neon (cyan) — var names kept for compatibility */
+    --mag:#ff2d95;                            /* secondary neon (magenta) */
+    --warn:#ffb648; --ok:#54ffb4;
+    --glowc:rgba(38,231,255,.55); --glowm:rgba(255,45,149,.5);
+    --disp:'Chakra Petch','Inter',system-ui,sans-serif;
+    --mono:'Share Tech Mono',ui-monospace,monospace;
+  }
+  body{margin:0;color:var(--ink);font-family:'Inter',system-ui,sans-serif;min-height:100vh;
+    background:
+      radial-gradient(900px 500px at 12% -5%, rgba(38,231,255,.10), transparent 55%),
+      radial-gradient(900px 600px at 100% 105%, rgba(255,45,149,.10), transparent 55%),
+      linear-gradient(180deg,#080a11,#0a0c15 60%,#080a11);
+    background-attachment:fixed;}
+  body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:9998;
+    background:repeating-linear-gradient(rgba(255,255,255,.020) 0 1px, transparent 1px 3px);}
+  body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:9997;opacity:.35;
+    background-image:linear-gradient(rgba(38,231,255,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(38,231,255,.05) 1px,transparent 1px);
+    background-size:44px 44px;mask-image:radial-gradient(circle at 50% 30%,#000,transparent 80%);}
+  .in{max-width:980px;margin:0 auto;padding:22px 14px 64px;position:relative;z-index:1;}
+  header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:18px;flex-wrap:wrap;}
+  .word{font-family:var(--disp);font-weight:700;font-size:30px;line-height:1;letter-spacing:1px;text-transform:uppercase;
+    color:var(--gold);text-shadow:0 0 10px var(--glowc),0 0 26px rgba(38,231,255,.35);}
+  .word em{font-style:italic;font-weight:600;color:var(--mag);text-shadow:0 0 10px var(--glowm),0 0 26px rgba(255,45,149,.3);}
+  .sub{color:var(--muted);font-size:12px;margin-top:8px;font-family:var(--mono);letter-spacing:.3px;}
+  .tools{display:flex;gap:8px;flex-wrap:wrap;}
+  .ghost{background:rgba(38,231,255,.02);border:1px solid var(--line2);color:var(--muted);font-size:11px;padding:8px 13px;
+    border-radius:4px;cursor:pointer;font-family:var(--mono);letter-spacing:.6px;text-transform:uppercase;transition:.15s;}
+  .ghost:hover{color:var(--gold);border-color:var(--gold-dim);box-shadow:0 0 12px rgba(38,231,255,.25);}
+  .panel{background:linear-gradient(180deg,rgba(20,26,44,.55),rgba(12,16,28,.55));border:1px solid var(--line);
+    border-radius:6px;margin-bottom:14px;overflow:hidden;backdrop-filter:blur(3px);
+    box-shadow:inset 0 1px 0 rgba(38,231,255,.06),0 6px 22px rgba(0,0,0,.35);}
+  .ph{display:flex;align-items:center;justify-content:space-between;padding:12px 15px;cursor:pointer;gap:10px;}
+  .ph h3{font-family:var(--disp);font-size:13.5px;margin:0;font-weight:600;text-transform:uppercase;letter-spacing:1.2px;
+    display:flex;align-items:center;}
+  .ph h3::before{content:"";width:8px;height:8px;background:var(--gold);margin-right:9px;transform:rotate(45deg);
+    box-shadow:0 0 8px var(--glowc);}
+  .ph .m{color:var(--muted);font-size:11px;font-family:var(--mono);letter-spacing:.5px;text-transform:uppercase;}
+  .pb{padding:0 15px 15px;}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;}
+  .bchip{font-size:12px;padding:8px 13px;border-radius:4px;border:1px solid var(--line2);background:none;color:var(--muted);
+    cursor:pointer;font-family:var(--mono);letter-spacing:.4px;transition:.12s;}
+  .bchip:hover{color:var(--ink);border-color:var(--gold-dim);}
+  .bchip.sel{color:var(--gold);border-color:var(--gold);background:rgba(38,231,255,.08);box-shadow:0 0 12px rgba(38,231,255,.22),inset 0 0 12px rgba(38,231,255,.06);}
+  .bchip .n{color:var(--muted);font-size:11px;margin-left:6px;}
+  .pactions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center;}
+  .tiny{color:var(--muted);font-size:11px;font-family:var(--mono);letter-spacing:.4px;}
+  .seg{display:flex;border:1px solid var(--line2);border-radius:5px;overflow:hidden;margin:2px auto 14px;width:max-content;max-width:100%;
+    box-shadow:inset 0 0 14px rgba(0,0,0,.4);}
+  .seg button{background:none;border:none;color:var(--muted);font-family:var(--mono);font-size:11.5px;letter-spacing:.6px;
+    text-transform:uppercase;padding:9px 18px;cursor:pointer;white-space:nowrap;transition:.12s;}
+  .seg button.on{background:var(--gold);color:#02121a;font-weight:600;box-shadow:0 0 16px var(--glowc);}
+  .studio{display:flex;flex-wrap:wrap;gap:7px;justify-content:center;margin-bottom:12px;align-items:center;}
+  .tb{font-size:11.5px;padding:8px 13px;border-radius:4px;border:1px solid var(--line2);background:rgba(38,231,255,.02);
+    color:var(--muted);cursor:pointer;font-family:var(--mono);letter-spacing:.5px;text-transform:uppercase;transition:.12s;}
+  .tb:hover{color:var(--ink);border-color:var(--gold-dim);}
+  .tb.on{color:var(--gold);border-color:var(--gold);background:rgba(38,231,255,.1);box-shadow:0 0 14px rgba(38,231,255,.28);}
+  .tb kbd{font-family:var(--mono);font-size:10px;color:var(--mag);margin-left:6px;}
+  .tsel{background:#0c1120;border:1px solid var(--line2);color:var(--muted);font-family:var(--mono);font-size:11.5px;
+    border-radius:4px;padding:8px 10px;text-transform:uppercase;letter-spacing:.5px;}
+  .tsel:focus{outline:none;border-color:var(--gold-dim);}
+  .gbar{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;align-items:center;margin:0 0 10px;}
+  .gstat{font-family:var(--mono);font-size:11.5px;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);
+    border:1px solid var(--line2);border-radius:4px;padding:8px 13px;background:rgba(255,45,149,.05);}
+  .gstat b{color:var(--gold);}
+  .tbar{height:4px;border-radius:2px;background:#0c1120;overflow:hidden;margin:0 0 10px;display:none;border:1px solid var(--line);}
+  .tbar.show{display:block;}
+  .tbar i{display:block;height:100%;background:linear-gradient(90deg,var(--mag),var(--gold));width:0%;transition:width .24s linear;box-shadow:0 0 12px var(--glowc);}
+  .frame{position:relative;background:linear-gradient(180deg,rgba(10,14,24,.7),rgba(8,10,18,.7));border:1px solid var(--line2);
+    border-radius:6px;padding:14px;display:flex;justify-content:center;align-items:center;min-height:250px;
+    box-shadow:inset 0 0 40px rgba(0,0,0,.55);}
+  .frame::before,.frame::after{content:"";position:absolute;width:20px;height:20px;border:2px solid var(--gold);pointer-events:none;}
+  .frame::before{top:8px;left:8px;border-right:0;border-bottom:0;box-shadow:-2px -2px 12px var(--glowc);}
+  .frame::after{bottom:8px;right:8px;border-left:0;border-top:0;box-shadow:2px 2px 12px var(--glowc);}
+  .imgbox{position:relative;display:inline-block;max-width:100%;}
+  .pinimg{max-width:100%;max-height:64vh;border-radius:4px;display:block;cursor:pointer;border:1px solid rgba(38,231,255,.3);
+    box-shadow:0 0 0 1px rgba(255,45,149,.14),0 18px 55px rgba(0,0,0,.6),0 0 34px rgba(38,231,255,.14);}
+  .reveal{animation:rise .5s cubic-bezier(.2,.7,.2,1);}
+  @keyframes rise{from{opacity:0;transform:translateY(10px) scale(.985);}to{opacity:1;transform:none;}}
+  @media (prefers-reduced-motion:reduce){.reveal{animation:none;}}
+  .grid-ov{position:absolute;inset:0;border-radius:4px;pointer-events:none;}
+  .grid-ov.thirds{background-image:linear-gradient(to right,transparent calc(33.33% - 1px),rgba(255,45,149,.9) 33.33%,transparent calc(33.33% + 1px),transparent calc(66.66% - 1px),rgba(255,45,149,.9) 66.66%,transparent calc(66.66% + 1px)),linear-gradient(to bottom,transparent calc(33.33% - 1px),rgba(255,45,149,.9) 33.33%,transparent calc(33.33% + 1px),transparent calc(66.66% - 1px),rgba(255,45,149,.9) 66.66%,transparent calc(66.66% + 1px));}
+  .grid-ov.fine{background-image:repeating-linear-gradient(to right,rgba(255,45,149,.7) 0 1px,transparent 1px calc(100%/8)),repeating-linear-gradient(to bottom,rgba(255,45,149,.7) 0 1px,transparent 1px calc(100%/8));}
+  .plc{color:var(--muted);text-align:center;line-height:1.6;padding:30px 12px;font-family:var(--mono);letter-spacing:.3px;}
+  .palette{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;justify-content:center;}
+  .sw{width:60px;border-radius:4px;overflow:hidden;border:1px solid var(--line2);cursor:pointer;background:none;padding:0;font-family:var(--mono);}
+  .sw:hover{border-color:var(--gold-dim);box-shadow:0 0 12px rgba(38,231,255,.2);}
+  .sw i{display:block;height:38px;}
+  .sw span{display:block;font-size:10px;color:var(--muted);padding:4px 0;text-align:center;letter-spacing:.4px;}
+  .meta{margin-top:15px;display:flex;flex-direction:column;gap:10px;}
+  .pt{font-family:var(--disp);font-size:18px;font-weight:600;line-height:1.3;letter-spacing:.3px;}
+  .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
+  .chip{font-size:11px;color:var(--muted);border:1px solid var(--line2);border-radius:4px;padding:6px 12px;text-decoration:none;
+    background:none;cursor:pointer;font-family:var(--mono);letter-spacing:.5px;text-transform:uppercase;transition:.12s;}
+  .chip:hover{color:var(--ink);border-color:var(--gold-dim);}
+  .chip.board{color:var(--mag);border-color:rgba(255,45,149,.5);box-shadow:0 0 12px rgba(255,45,149,.15);}
+  .favb{font-size:11px;border-radius:4px;padding:6px 13px;border:1px solid var(--line2);background:none;color:var(--ink);
+    cursor:pointer;font-family:var(--mono);letter-spacing:.5px;text-transform:uppercase;transition:.12s;}
+  .favb:hover{border-color:var(--gold-dim);}
+  .favb.saved{color:var(--gold);border-color:var(--gold);background:rgba(38,231,255,.1);box-shadow:0 0 12px rgba(38,231,255,.2);}
+  .favb.inset{color:var(--ok);border-color:rgba(84,255,180,.5);background:rgba(84,255,180,.08);box-shadow:0 0 12px rgba(84,255,180,.15);}
+  .favb.hidebtn{color:var(--muted);}
+  .favb.hidebtn:hover{color:var(--mag);border-color:rgba(255,45,149,.5);box-shadow:0 0 12px rgba(255,45,149,.15);}
+  .tagrow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
+  .tag{font-size:11px;color:var(--ink);background:rgba(38,231,255,.06);border:1px solid var(--line2);border-radius:4px;
+    padding:5px 9px;display:inline-flex;gap:6px;align-items:center;font-family:var(--mono);letter-spacing:.3px;}
+  .tag b{cursor:pointer;color:var(--muted);font-weight:400;}
+  .tag b:hover{color:var(--mag);}
+  .taginput{background:#0c1120;border:1px solid var(--line2);color:var(--ink);font-family:var(--mono);font-size:12px;
+    border-radius:4px;padding:6px 11px;width:150px;letter-spacing:.3px;}
+  .taginput::placeholder{color:var(--muted);}.taginput:focus{outline:none;border-color:var(--gold-dim);box-shadow:0 0 10px rgba(38,231,255,.2);}
+  .ctr{margin-top:22px;display:flex;flex-direction:column;align-items:center;gap:10px;}
+  .draw{font-family:var(--disp);font-weight:700;font-size:16px;letter-spacing:1.5px;text-transform:uppercase;
+    background:linear-gradient(135deg,var(--gold),#12b9d6);color:#02121a;border:none;padding:15px 46px;cursor:pointer;
+    clip-path:polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px);
+    filter:drop-shadow(0 0 12px var(--glowc));transition:.15s;}
+  .draw:hover{filter:drop-shadow(0 0 20px var(--glowc)) brightness(1.08);}
+  .draw:active{transform:translateY(1px);}
+  .count{color:var(--muted);font-size:11.5px;font-family:var(--mono);letter-spacing:.5px;}
+  .count b{color:var(--gold);}
+  .hint{color:var(--muted);font-size:10px;letter-spacing:1px;text-transform:uppercase;text-align:center;font-family:var(--mono);}
+  .fg{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;}
+  .fc{position:relative;border-radius:4px;overflow:hidden;border:1px solid var(--line2);aspect-ratio:1;background:#05070d;}
+  .fc img{width:100%;height:100%;object-fit:cover;display:block;}
+  .fc .x{position:absolute;top:5px;right:5px;background:rgba(5,7,13,.75);color:var(--mag);border:1px solid rgba(255,45,149,.4);
+    border-radius:4px;width:24px;height:24px;cursor:pointer;line-height:1;}
+  .fe{color:var(--muted);font-size:12px;font-family:var(--mono);letter-spacing:.3px;}
+  .dsrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;}
+  .dsin{background:#0c1120;border:1px solid var(--line2);color:var(--ink);font-family:var(--mono);font-size:12px;
+    border-radius:4px;padding:9px 13px;min-width:190px;letter-spacing:.3px;}
+  .dsin::placeholder{color:var(--muted);}.dsin:focus{outline:none;border-color:var(--gold-dim);box-shadow:0 0 10px rgba(38,231,255,.2);}
+  .primary{font-family:var(--disp);background:linear-gradient(135deg,var(--gold),#12b9d6);color:#02121a;font-weight:700;
+    border:none;padding:10px 20px;cursor:pointer;font-size:12px;letter-spacing:1px;text-transform:uppercase;
+    clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px);
+    filter:drop-shadow(0 0 10px var(--glowc));transition:.15s;}
+  .primary:hover{filter:drop-shadow(0 0 16px var(--glowc)) brightness(1.06);}
+  .primary:disabled{opacity:.4;cursor:default;filter:none;}
+  .oknote{color:var(--ok);font-size:12px;font-family:var(--mono);}.warnnote{color:var(--warn);font-size:12px;font-family:var(--mono);}
+  .drop{border:1px solid var(--line2);border-radius:6px;padding:40px 24px;text-align:center;max-width:640px;margin:10px auto 0;
+    background:linear-gradient(180deg,rgba(20,26,44,.4),rgba(10,14,24,.4));position:relative;overflow:hidden;
+    box-shadow:inset 0 0 40px rgba(0,0,0,.4);}
+  .drop::before{content:"";position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),var(--mag),transparent);box-shadow:0 0 12px var(--glowc);}
+  .drop h2{font-family:var(--disp);font-weight:700;font-size:20px;margin:0 0 8px;text-transform:uppercase;letter-spacing:1.5px;
+    color:var(--ink);text-shadow:0 0 14px rgba(38,231,255,.25);}
+  .drop p{color:var(--muted);font-size:13px;line-height:1.6;margin:0 auto;max-width:470px;}
+  .pickrow{margin-top:18px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}
+  .pick{font-family:var(--disp);background:linear-gradient(135deg,var(--gold),#12b9d6);color:#02121a;font-weight:700;border:none;
+    padding:12px 26px;cursor:pointer;font-size:13px;letter-spacing:1px;text-transform:uppercase;
+    clip-path:polygon(9px 0,100% 0,100% calc(100% - 9px),calc(100% - 9px) 100%,0 100%,0 9px);
+    filter:drop-shadow(0 0 12px var(--glowc));transition:.15s;}
+  .pick:hover{filter:drop-shadow(0 0 18px var(--glowc)) brightness(1.06);}
+  .pick.alt{background:none;border:1px solid var(--line2);color:var(--ink);clip-path:none;filter:none;border-radius:4px;}
+  .pick.alt:hover{border-color:var(--gold-dim);box-shadow:0 0 12px rgba(38,231,255,.2);}
+  .foot{color:var(--muted);font-size:11px;text-align:center;margin-top:14px;line-height:1.5;font-family:var(--mono);letter-spacing:.4px;}
+
+</style>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+<div class="in">
+  <header>
+    <div>
+      <div class="word">Spark<em> Studio</em></div>
+      <div class="sub" id="subline">Random reference, study tools, and dataset prep — all local.</div>
+    </div>
+    <div class="tools" id="tools"></div>
+  </header>
+  <div id="app"></div>
+</div>
+
+<script>
+const IMG_RE = /\.(jpe?g|png|webp|gif|avif|bmp|heic|heif)$/i;
+const NO_SUB = "(no subfolder)";
+const HAS_FS = !!window.showDirectoryPicker;   // desktop Chrome/Edge
+const IS_MOBILE = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);   // real phone/tablet vs a desktop browser lacking the picker API
+const LS = { favs:"sparkst_favs", off:"sparkst_off", tags:"sparkst_tags", ds:"sparkst_ds", trig:"sparkst_trigger", drawn:"sparkst_drawnimgs", hidden:"sparkst_hidden", synced:"sparkst_synced" };
+const DRAWN_MS = 30000;   // free-browsing dwell that counts as "drew it" (gesture completion always counts)
+const MIN_DIM = 400;      // images smaller than this in either dimension are filtered out of rotation. Change this number to adjust.
+const GESTURE_PRESETS = {
+  warmup: { label:"Warm-up (30s·60s·2m)", steps:[[30,5],[60,3],[120,2]] },
+  quick:  { label:"Quick — 30s ×10",       steps:[[30,10]] },
+  study:  { label:"Long study — 5m ×6",     steps:[[300,6]] },
+  ramp:   { label:"Full ramp 30s→10m",      steps:[[30,2],[60,2],[120,2],[300,2],[600,1]] },
+};
+const buildPlan = (key) => { const out=[]; (GESTURE_PRESETS[key]||GESTURE_PRESETS.warmup).steps.forEach(([d,n])=>{ for(let i=0;i<n;i++) out.push(d); }); return out; };
+const fmtDur = (s) => s<60 ? s+"s" : (s%60===0 ? (s/60)+"m" : Math.floor(s/60)+"m"+(s%60)+"s");
+
+const $  = (s, r=document) => r.querySelector(s);
+const el = (h) => { const t=document.createElement("template"); t.innerHTML=h.trim(); return t.content.firstChild; };
+const esc = (s) => (s||"").replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const clean = (n) => n.replace(IMG_RE,"").replace(/[_-]+/g," ").replace(/\s+/g," ").trim();
+
+const state = {
+  items: [], boardsOff: new Set(JSON.parse(localStorage.getItem(LS.off)||"[]")),
+  favs: new Set(JSON.parse(localStorage.getItem(LS.favs)||"[]")),
+  tags: JSON.parse(localStorage.getItem(LS.tags)||"{}"),
+  ds: new Set(JSON.parse(localStorage.getItem(LS.ds)||"[]")),
+  drawnImgs: new Set(JSON.parse(localStorage.getItem(LS.drawn)||"[]")),
+  hidden: new Set(JSON.parse(localStorage.getItem(LS.hidden)||"[]")),
+  tooSmall: new Set(),                                   // session-only: images found under MIN_DIM on load
+  trigger: localStorage.getItem(LS.trig)||"",
+  source: "boards", current: null, drawn: 0, shownAt: 0,
+  panelOpen: true, favOpen: false, dsOpen: false, hiddenOpen: false, rememberedName: null,
+  flip:false, gray:false, values:0, blur:0, grid:0, palette:null,
+  timerDur:60, timerLeft:0, timerOn:false, exportMsg:"",
+  gesture: { on:false, plan:[], idx:0, preset:"warmup", doneMsg:"" },
+  activeSource:null,                                     // 'folder' | 'photos' | 'drive'
+  gd: JSON.parse(localStorage.getItem("sparkst_gd")||'{"clientId":"","folderLink":"","folderId":""}'),
+  gdMsg:"", gdBusy:false, token:null, tokenExp:0, currentUrl:null, loadErr:false, metaId:null,
+};
+const urlCache = new Map();
+let bag = [], timerId = null;
+
+const saveFavs=()=>{ localStorage.setItem(LS.favs, JSON.stringify([...state.favs])); scheduleMetaSave(); };
+const saveOff =()=>localStorage.setItem(LS.off,  JSON.stringify([...state.boardsOff]));
+const saveTags=()=>{ localStorage.setItem(LS.tags, JSON.stringify(state.tags)); scheduleMetaSave(); };
+const saveDs  =()=>{ localStorage.setItem(LS.ds, JSON.stringify([...state.ds])); scheduleMetaSave(); };
+const saveTrig=()=>{ localStorage.setItem(LS.trig, state.trigger); scheduleMetaSave(); };
+const saveDrawn=()=>{ localStorage.setItem(LS.drawn, JSON.stringify([...state.drawnImgs])); scheduleMetaSave(); };
+const saveHidden=()=>{ localStorage.setItem(LS.hidden, JSON.stringify([...state.hidden])); scheduleMetaSave(); };
+function markDrawn(path){ if(path && !state.drawnImgs.has(path)){ state.drawnImgs.add(path); saveDrawn(); } }
+function toggleDrawn(path){ if(!path) return; if(state.drawnImgs.has(path)) state.drawnImgs.delete(path); else state.drawnImgs.add(path); saveDrawn(); }
+function hideImage(path){ if(!path) return; state.hidden.add(path); saveHidden(); }
+function unhide(path){ state.hidden.delete(path); saveHidden(); }
+
+// ---- IndexedDB: 'handles' for desktop folder handle, 'lib' for phone image cache ----
+function idb(mode, store, fn){
+  return new Promise((res, rej)=>{
+    const open = indexedDB.open("spark-fs", 2);
+    open.onupgradeneeded = () => {
+      const db = open.result;
+      if (!db.objectStoreNames.contains("handles")) db.createObjectStore("handles");
+      if (!db.objectStoreNames.contains("lib")) db.createObjectStore("lib", { keyPath:"id" });
+    };
+    open.onerror = () => rej(open.error);
+    open.onsuccess = () => {
+      const tx = open.result.transaction(store, mode);
+      const r = fn(tx.objectStore(store));
+      tx.oncomplete = () => res(r && r.result);
+      tx.onerror = () => rej(tx.error);
+    };
+  });
+}
+const idbGet = (k) => idb("readonly","handles", s => s.get(k)).catch(()=>null);
+const idbSet = (k,v) => idb("readwrite","handles", s => s.put(v,k)).catch(()=>{});
+const libAll   = () => idb("readonly","lib", s => s.getAll()).catch(()=>[]);
+const libPut   = (rec) => idb("readwrite","lib", s => s.put(rec)).catch(()=>{});
+const libDel   = (id) => idb("readwrite","lib", s => s.delete(id)).catch(()=>{});
+const libClear = () => idb("readwrite","lib", s => s.clear()).catch(()=>{});
+
+// ---- files ----
+function urlFor(path){ return urlCache.get(path) || ""; }
+async function ensureUrl(it){
+  if (!it) return "";
+  if (urlCache.has(it.path)) return urlCache.get(it.path);
+  let blob;
+  if (it.file) blob = it.file;
+  else if (it.driveId) blob = await driveMedia(it.driveId);
+  else if (it.githubUrl){ const r=await fetch(it.githubUrl); if(!r.ok) throw new Error("fetch "+r.status); blob=await r.blob(); }
+  else return "";
+  const u = URL.createObjectURL(blob);
+  urlCache.set(it.path, u);
+  return u;
+}
+function clearUrls(){ urlCache.forEach(u => URL.revokeObjectURL(u)); urlCache.clear(); }
+function finishLoad(arr){
+  clearUrls();
+  arr.sort((a,b)=> a.path.localeCompare(b.path));
+  state.items = arr; bag = []; state.current = null; state.palette = null; state.tooSmall = new Set();
+  render(); showImage();
+}
+
+// desktop: folder
+function loadFromFileList(fileList){
+  const arr = [];
+  for (const file of fileList){
+    if (!IMG_RE.test(file.name)) continue;
+    const rel = file.webkitRelativePath || file.name;
+    const parts = rel.split("/");
+    const path = parts.length > 1 ? parts.slice(1).join("/") : parts[0];
+    const p2 = path.split("/");
+    arr.push({ path, board: p2.length>1 ? p2[0] : NO_SUB, name: clean(file.name), file });
+  }
+  state.activeSource = "folder";
+  finishLoad(arr);
+}
+async function walkDir(dirHandle, prefix, out){
+  for await (const [name, handle] of dirHandle.entries()){
+    const path = prefix ? prefix + "/" + name : name;
+    if (handle.kind === "file"){
+      if (IMG_RE.test(name)){
+        const file = await handle.getFile();
+        const parts = path.split("/");
+        out.push({ path, board: parts.length>1 ? parts[0] : NO_SUB, name: clean(name), file });
+      }
+    } else if (handle.kind === "directory") await walkDir(handle, path, out);
+  }
+}
+async function loadFromHandle(handle){
+  const perm = await handle.queryPermission({ mode:"read" });
+  if (perm !== "granted"){ const req = await handle.requestPermission({ mode:"read" }); if (req !== "granted") return; }
+  const out = []; await walkDir(handle, "", out);
+  state.rememberedName = handle.name; state.activeSource = "folder"; finishLoad(out);
+}
+async function chooseFolder(){
+  try{ const handle = await window.showDirectoryPicker({ mode:"read" }); await idbSet("dir", handle); await loadFromHandle(handle); }catch(e){}
+}
+async function reopenRemembered(){ const handle = await idbGet("dir"); if (handle) await loadFromHandle(handle); }
+
+// phone: cached library
+async function loadLibrary(){
+  const recs = await libAll();
+  const arr = recs.map(r => ({ path:r.id, board:NO_SUB, name:clean(r.name), file:r.blob }));
+  state.activeSource = "photos";
+  finishLoad(arr);
+}
+async function addImages(fileList){
+  let added = 0;
+  for (const file of fileList){
+    if (!IMG_RE.test(file.name)) continue;
+    const id = `${file.name}|${file.size}|${file.lastModified}`;
+    await libPut({ id, name:file.name, blob:file });
+    added++;
+  }
+  await loadLibrary();
+}
+async function clearLibrary(){ await libClear(); state.items=[]; clearUrls(); state.current=null; render(); }
+
+// ---- Google Drive (client-side, read-only; token in memory only) ----
+let tokenClient = null;
+function waitForGis(){ return new Promise((res,rej)=>{ let n=0; (function chk(){ if(window.google&&google.accounts&&google.accounts.oauth2) return res(); if(n++>100) return rej(new Error("Google sign-in library didn't load — check your connection.")); setTimeout(chk,100); })(); }); }
+function initGis(clientId){ tokenClient = google.accounts.oauth2.initTokenClient({ client_id: clientId, scope:"https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.appdata", callback: ()=>{} }); }
+function getToken(interactive){
+  return new Promise((resolve,reject)=>{
+    if(state.token && Date.now() < state.tokenExp-60000) return resolve(state.token);
+    if(!tokenClient) return reject(new Error("Drive not initialized"));
+    let done=false;
+    tokenClient.callback = (resp)=>{ if(done)return; done=true; if(resp && resp.error) return reject(new Error(resp.error)); state.token=resp.access_token; state.tokenExp=Date.now()+((resp.expires_in||3600)*1000); resolve(resp.access_token); };
+    if(!interactive) setTimeout(()=>{ if(!done){ done=true; reject(new Error("silent sign-in timed out")); } }, 8000);
+    try{ tokenClient.requestAccessToken({ prompt: interactive ? "" : "none" }); }catch(e){ if(!done){ done=true; reject(e); } }
+  });
+}
+function parseFolderId(v){ v=(v||"").trim(); let m=v.match(/folders\/([-\w]+)/); if(m) return m[1]; m=v.match(/[?&]id=([-\w]+)/); if(m) return m[1]; return v.replace(/\/+$/,""); }
+async function driveMedia(id){
+  const t = await getToken(false);
+  const r = await fetch(`https://www.googleapis.com/drive/v3/files/${id}?alt=media&supportsAllDrives=true`, { headers:{ Authorization:"Bearer "+t } });
+  if(!r.ok) throw new Error("Drive media "+r.status);
+  return await r.blob();
+}
+async function driveList(rootId){
+  const t = await getToken(false);
+  const out = [];
+  async function listChildren(folderId, boardName){
+    let pageToken = null;
+    do{
+      const q = encodeURIComponent(`'${folderId}' in parents and trashed=false`);
+      const url = `https://www.googleapis.com/drive/v3/files?q=${q}&fields=nextPageToken,files(id,name,mimeType,imageMediaMetadata(width,height))&pageSize=1000&supportsAllDrives=true&includeItemsFromAllDrives=true` + (pageToken?`&pageToken=${pageToken}`:"");
+      const r = await fetch(url, { headers:{ Authorization:"Bearer "+t } });
+      if(!r.ok) throw new Error("Drive list "+r.status);
+      const data = await r.json();
+      for(const f of (data.files||[])){
+        if(f.mimeType === "application/vnd.google-apps.folder"){ await listChildren(f.id, boardName || f.name); continue; }
+        if(!IMG_RE.test(f.name)) continue;
+        const md = f.imageMediaMetadata;   // Drive tells us pixel size without downloading — skip tiny ones upfront
+        if(md && md.width && md.height && (md.width < MIN_DIM || md.height < MIN_DIM)) continue;
+        out.push({ path:"gd:"+f.id, driveId:f.id, name:clean(f.name), board: boardName || NO_SUB });
+      }
+      pageToken = data.nextPageToken;
+    } while(pageToken);
+  }
+  await listChildren(rootId, null);
+  return out;
+}
+async function loadDrive(){
+  state.gdBusy=true; render();
+  try{
+    const items = await driveList(state.gd.folderId);
+    state.gdBusy=false;
+    if(!items.length){ state.gdMsg="Connected, but no images were found in that folder."; render(); return; }
+    state.activeSource="drive";
+    finishLoad(items);
+    driveMetaLoad();
+  }catch(e){ state.gdBusy=false; state.gdMsg="Couldn't read the folder: "+(e.message||e); render(); }
+}
+async function connectDrive(clientId, folderLink){
+  clientId=(clientId||"").trim(); const folderId=parseFolderId(folderLink);
+  if(!clientId || !folderId){ state.gdMsg="Enter both your Client ID and a Drive folder link."; render(); return; }
+  state.gdBusy=true; state.gdMsg=""; render();
+  try{
+    await waitForGis(); initGis(clientId);
+    await getToken(true);
+    state.gd={clientId, folderLink, folderId}; localStorage.setItem("sparkst_gd", JSON.stringify(state.gd));
+    state.boardsOff=new Set(); saveOff();
+    state.gdBusy=false;
+    await loadDrive();
+  }catch(e){ state.gdBusy=false; state.gdMsg="Couldn't connect: "+(e.message||e); render(); }
+}
+async function refreshDrive(){ if(state.gd&&state.gd.folderId){ try{ await getToken(false);}catch(e){} await loadDrive(); } }
+function disconnectDrive(){ state.gd={clientId:"",folderLink:"",folderId:""}; localStorage.removeItem("sparkst_gd"); state.token=null; state.tokenExp=0; state.items=[]; clearUrls(); state.current=null; state.activeSource=null; state.gdMsg=""; render(); }
+async function autoLoadDrive(){
+  try{ await waitForGis(); initGis(state.gd.clientId); await getToken(false); await loadDrive(); return state.activeSource==="drive"; }
+  catch(e){ state.gdMsg="Tap Connect to sign in to Google Drive."; render(); return false; }
+}
+
+// ---- cross-device settings sync (tags / favorites / dataset / trigger) via a hidden app file in Drive ----
+let metaTimer = null;
+function scheduleMetaSave(){ if(state.activeSource!=="drive") return; clearTimeout(metaTimer); metaTimer=setTimeout(()=>{ driveMetaSave().catch(()=>{}); }, 1500); }
+async function driveMetaFind(){
+  const t = await getToken(false);
+  const url = "https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&fields=files(id)&q=" + encodeURIComponent("name='spark-meta.json'");
+  const r = await fetch(url, { headers:{ Authorization:"Bearer "+t } });
+  if(!r.ok) return null;
+  const d = await r.json();
+  return (d.files && d.files[0]) ? d.files[0].id : null;
+}
+async function driveMetaSave(){
+  if(state.activeSource!=="drive") return;
+  const t = await getToken(false);
+  const savedAt = Date.now();
+  const payload = JSON.stringify({ v:2, tags:state.tags, favs:[...state.favs], ds:[...state.ds], drawnImgs:[...state.drawnImgs], hidden:[...state.hidden], trigger:state.trigger, savedAt });
+  localStorage.setItem(LS.synced, String(savedAt));   // our own write is the newest we've seen
+  if(!state.metaId){
+    const boundary = "spark"+Date.now();
+    const meta = JSON.stringify({ name:"spark-meta.json", parents:["appDataFolder"], mimeType:"application/json" });
+    const multipart = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${payload}\r\n--${boundary}--`;
+    const r = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id", { method:"POST", headers:{ Authorization:"Bearer "+t, "Content-Type":`multipart/related; boundary=${boundary}` }, body: multipart });
+    if(r.ok){ const d = await r.json(); state.metaId = d.id; }
+  } else {
+    await fetch(`https://www.googleapis.com/upload/drive/v3/files/${state.metaId}?uploadType=media`, { method:"PATCH", headers:{ Authorization:"Bearer "+t, "Content-Type":"application/json" }, body: payload });
+  }
+}
+function persistMetaLocal(){
+  localStorage.setItem(LS.favs, JSON.stringify([...state.favs]));
+  localStorage.setItem(LS.ds, JSON.stringify([...state.ds]));
+  localStorage.setItem(LS.drawn, JSON.stringify([...state.drawnImgs]));
+  localStorage.setItem(LS.hidden, JSON.stringify([...state.hidden]));
+  localStorage.setItem(LS.tags, JSON.stringify(state.tags));
+  localStorage.setItem(LS.trig, state.trigger);
+}
+async function driveMetaLoad(){
+  try{
+    state.metaId = await driveMetaFind();
+    if(!state.metaId){ await driveMetaSave(); return; }   // first device ever: push current local settings up
+    const t = await getToken(false);
+    const r = await fetch(`https://www.googleapis.com/drive/v3/files/${state.metaId}?alt=media`, { headers:{ Authorization:"Bearer "+t } });
+    if(!r.ok) return;
+    const d = await r.json();
+    const remoteAt = d.savedAt || 0;
+    const syncedRaw = localStorage.getItem(LS.synced);
+
+    if(syncedRaw === null){
+      // First reconcile on this device under the new sync model: union-merge once so
+      // pre-existing local work is never lost, then push the merged result up.
+      (d.favs||[]).forEach(x=>state.favs.add(x));
+      (d.ds||[]).forEach(x=>state.ds.add(x));
+      (d.drawnImgs||[]).forEach(x=>state.drawnImgs.add(x));
+      (d.hidden||[]).forEach(x=>state.hidden.add(x));
+      for(const [k,v] of Object.entries(d.tags||{})){ const cur=new Set(state.tags[k]||[]); (v||[]).forEach(tag=>cur.add(tag)); state.tags[k]=[...cur]; }
+      if(d.trigger && !state.trigger) state.trigger=d.trigger;
+      persistMetaLocal(); render();
+      await driveMetaSave().catch(()=>{});   // sets LS.synced
+    } else if(remoteAt > +syncedRaw){
+      // Remote has newer changes than anything we've saved → adopt it wholesale.
+      // Wholesale replace (not union) is what makes removals — untag, unfavorite — actually stick.
+      state.tags = d.tags || {};
+      state.favs = new Set(d.favs||[]);
+      state.ds = new Set(d.ds||[]);
+      state.drawnImgs = new Set(d.drawnImgs||[]);
+      state.hidden = new Set(d.hidden||[]);
+      if(typeof d.trigger === "string") state.trigger = d.trigger;
+      persistMetaLocal();
+      localStorage.setItem(LS.synced, String(remoteAt));
+      render();
+    } else {
+      // Our local state is the same or newer → make it the source of truth.
+      await driveMetaSave().catch(()=>{});
+    }
+  }catch(e){}
+}
+
+// ---- draw ----
+function visible(i){ return !state.hidden.has(i.path) && !state.tooSmall.has(i.path); }   // never-show + under-MIN_DIM
+function pool(){
+  if (state.source === "favorites") return state.items.filter(i => state.favs.has(i.path) && visible(i));
+  if (state.source === "dataset")   return state.items.filter(i => state.ds.has(i.path) && visible(i));
+  if (state.source === "undrawn")   return state.items.filter(i => !state.drawnImgs.has(i.path) && !state.boardsOff.has(i.board) && visible(i));
+  return state.items.filter(i => !state.boardsOff.has(i.board) && visible(i));
+}
+const shuffle = (a) => { for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; };
+// Core: pick the next image and show it. No skip/dwell/timer semantics — callers own those.
+function showImage(){
+  const p = pool();
+  if (!p.length){ state.current = null; state.currentUrl = null; render(); return; }
+  if (!bag.length){
+    let paths = p.map(i=>i.path).filter(x => !(state.current && x===state.current.path));
+    if (!paths.length) paths = p.map(i=>i.path);
+    // Prefer images you haven't drawn yet — fresh references surface before repeats.
+    const undrawn=[], drawn=[];
+    for (const x of paths) (state.drawnImgs.has(x)?drawn:undrawn).push(x);
+    bag = shuffle(undrawn).concat(shuffle(drawn));
+  }
+  const path = bag.shift();
+  state.current = p.find(i=>i.path===path) || p[0];
+  state.drawn++; state.shownAt = Date.now();
+  state.palette = null; state.currentUrl = null; state.loadErr = false;
+  render();
+  const cur = state.current;
+  ensureUrl(cur).then(u=>{
+    if(state.current!==cur) return;
+    // Dimension guard: skip anything under MIN_DIM in either dimension (backstop for sources without metadata).
+    const probe = new Image();
+    probe.onload = ()=>{
+      if(state.current!==cur) return;
+      if(probe.naturalWidth < MIN_DIM || probe.naturalHeight < MIN_DIM){
+        state.tooSmall.add(cur.path); bag = bag.filter(x=>x!==cur.path);
+        state.drawn--;                // it never really counted as shown
+        showImage();                  // advance past it
+        return;
+      }
+      state.currentUrl = u; render();
+    };
+    probe.onerror = ()=>{ if(state.current===cur){ state.loadErr=true; render(); } };
+    probe.src = u;
+  }).catch(()=>{ if(state.current===cur){ state.loadErr=true; render(); } });
+}
+// User action ("Show me another" / space / tap image).
+function draw(){
+  if (state.gesture.on){
+    // During a gesture this is a SKIP: swap the reference, restart this interval's clock, don't count it as drawn.
+    showImage();
+    state.timerLeft = state.timerDur; updateTimerBar();
+    return;
+  }
+  // Free browsing: if you stayed with the outgoing image long enough, it counts as drawn.
+  if (state.current && state.shownAt && (Date.now()-state.shownAt) >= DRAWN_MS) markDrawn(state.current.path);
+  showImage();
+  if (state.timerOn) state.timerLeft = state.timerDur;
+}
+function resetDeck(){ bag=[]; showImage(); }
+
+// ---- gesture session mode ----
+function startGesture(key){
+  if (state.timerOn) stopTimer();
+  state.gesture.on=true; state.gesture.preset=key; state.gesture.plan=buildPlan(key); state.gesture.idx=0; state.gesture.doneMsg="";
+  beginGestureStep();
+}
+function beginGestureStep(){
+  const g = state.gesture;
+  if (g.idx >= g.plan.length){ finishGesture(); return; }
+  state.timerDur = g.plan[g.idx]; state.timerLeft = g.plan[g.idx];
+  if (timerId) clearInterval(timerId);
+  timerId = setInterval(gestureTick, 250);
+  showImage(); updateTimerBar();
+}
+function gestureTick(){
+  state.timerLeft -= .25;
+  if (state.timerLeft <= 0){
+    if (state.current) markDrawn(state.current.path);   // saw the whole interval through = drew it
+    beep();
+    state.gesture.idx++;
+    beginGestureStep();
+  } else updateTimerBar();
+}
+function stopGesture(){ state.gesture.on=false; if(timerId){clearInterval(timerId);timerId=null;} render(); }
+function finishGesture(){
+  const n = state.gesture.plan.length;
+  state.gesture.on=false; if(timerId){clearInterval(timerId);timerId=null;}
+  state.gesture.doneMsg = "Session complete — "+n+" poses. Nice work.";
+  render();
+}
+
+// ---- download current image to the device ----
+function extFor(it, blob){
+  const cand = (it.file && it.file.name) || (it.path && !it.path.startsWith("gd:") ? it.path : "") || "";
+  const m = cand.match(IMG_RE); if(m) return m[0];
+  const t = (blob && blob.type) || "";
+  return t.includes("png")?".png":t.includes("webp")?".webp":t.includes("gif")?".gif":t.includes("avif")?".avif":t.includes("bmp")?".bmp":".jpg";
+}
+async function downloadCurrent(){
+  const it = state.current; if(!it) return;
+  try{
+    const blob = await bytesFor(it);
+    const ext = extFor(it, blob);
+    const stem = (clean(it.name).replace(/[^\w\- ]+/g,"").replace(/\s+/g,"_")) || "reference";
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href=url; a.download=stem+ext;
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 4000);
+  }catch(e){ state.exportMsg = "Couldn't download this image: "+(e.message||e); render(); }
+}
+function boards(){
+  const m = new Map();
+  state.items.forEach(i => m.set(i.board, (m.get(i.board)||0)+1));
+  return [...m.entries()].map(([name,count])=>({name,count})).sort((a,b)=>b.count-a.count);
+}
+
+// ---- timer ----
+function beep(){ try{ const c=new (window.AudioContext||window.webkitAudioContext)(); const o=c.createOscillator(),g=c.createGain(); o.connect(g);g.connect(c.destination); o.frequency.value=660; g.gain.value=.06; o.start(); o.stop(c.currentTime+.12);}catch(e){} }
+function startTimer(){ if(state.gesture.on) stopGesture(); state.timerOn=true; state.timerLeft=state.timerDur; if(timerId)clearInterval(timerId);
+  timerId=setInterval(()=>{ state.timerLeft-=.25; if(state.timerLeft<=0){ if(state.current) markDrawn(state.current.path); beep(); draw(); } else updateTimerBar(); },250); render(); }
+function stopTimer(){ state.timerOn=false; if(timerId){clearInterval(timerId);timerId=null;} render(); }
+function updateTimerBar(){ const b=$("#tprog"); if(b) b.style.width=(100*state.timerLeft/state.timerDur)+"%"; }
+
+// ---- posterize / palette ----
+function drawProcessed(canvas, img, levels){
+  const scale = Math.min(1, 1600/img.naturalWidth);
+  canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));
+  canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));
+  const cx=canvas.getContext("2d"); cx.drawImage(img,0,0,canvas.width,canvas.height);
+  const d=cx.getImageData(0,0,canvas.width,canvas.height); const a=d.data; const n=levels;
+  for(let i=0;i<a.length;i+=4){ const lum=.2126*a[i]+.7152*a[i+1]+.0722*a[i+2]; const q=Math.min(n-1,Math.floor(lum/256*n)); const v=Math.round(q*255/(n-1)); a[i]=a[i+1]=a[i+2]=v; }
+  cx.putImageData(d,0,0);
+}
+function extractPalette(img){
+  const c=document.createElement("canvas"); const s=80; c.width=s;c.height=s;
+  const cx=c.getContext("2d"); cx.drawImage(img,0,0,s,s); const d=cx.getImageData(0,0,s,s).data;
+  const b=new Map();
+  for(let i=0;i<d.length;i+=4){ const r=d[i],g=d[i+1],bl=d[i+2]; const k=((r>>4)<<8)|((g>>4)<<4)|(bl>>4); let e=b.get(k); if(!e){e={c:0,r:0,g:0,b:0};b.set(k,e);} e.c++;e.r+=r;e.g+=g;e.b+=bl; }
+  const sorted=[...b.values()].sort((x,y)=>y.c-x.c); const out=[];
+  const distinct=(r,g,bl)=>out.every(o=>(Math.abs(o.r-r)+Math.abs(o.g-g)+Math.abs(o.b-bl))>60);
+  for(const e of sorted){ const r=Math.round(e.r/e.c),g=Math.round(e.g/e.c),bl=Math.round(e.b/e.c); if(distinct(r,g,bl))out.push({r,g,b:bl}); if(out.length>=6)break; }
+  const hx=v=>v.toString(16).padStart(2,"0");
+  return out.map(o=>"#"+hx(o.r)+hx(o.g)+hx(o.b));
+}
+
+// ---- tags & dataset ----
+function tagsFor(path){ return state.tags[path] || []; }
+function addTag(path,t){ t=t.trim().toLowerCase(); if(!t)return; const cur=tagsFor(path); if(!cur.includes(t))state.tags[path]=[...cur,t]; saveTags(); }
+function rmTag(path,t){ state.tags[path]=tagsFor(path).filter(x=>x!==t); if(!state.tags[path].length)delete state.tags[path]; saveTags(); }
+function toggleDs(path){ if(state.ds.has(path))state.ds.delete(path); else state.ds.add(path); saveDs(); }
+
+function captionFor(path){ const parts=[]; if(state.trigger.trim())parts.push(state.trigger.trim()); parts.push(...tagsFor(path)); return parts.join(", "); }
+
+// desktop export: write into a chosen folder
+async function bytesFor(it){
+  if (it.file) return it.file;
+  if (it.driveId) return await driveMedia(it.driveId);
+  const res = await fetch(it.githubUrl);
+  if (!res.ok) throw new Error("Couldn't download "+it.name+" ("+res.status+")");
+  return await res.blob();
+}
+async function exportToFolder(items){
+  const dir = await window.showDirectoryPicker({ mode:"readwrite" });
+  let n=0;
+  for (const it of items){
+    const base=it.path.replace(/\//g,"__"); const stem=base.replace(IMG_RE,""); const ext=(base.match(IMG_RE)||[".png"])[0];
+    const bytes = await bytesFor(it);
+    const fh=await dir.getFileHandle(stem+ext,{create:true}); const w=await fh.createWritable(); await w.write(bytes); await w.close();
+    const ch=await dir.getFileHandle(stem+".txt",{create:true}); const cw=await ch.createWritable(); await cw.write(captionFor(it.path)); await cw.close();
+    n++;
+  }
+  return n;
+}
+// phone export: build a zip and download it
+function crc32(buf){let c=~0>>>0;for(let i=0;i<buf.length;i++){c^=buf[i];for(let k=0;k<8;k++)c=(c>>>1)^(0xEDB88320&-(c&1));}return(~c)>>>0;}
+function makeZip(entries){
+  const enc=new TextEncoder();const chunks=[];const central=[];let offset=0;
+  const u16=n=>[n&255,(n>>8)&255];const u32=n=>[n&255,(n>>8)&255,(n>>16)&255,(n>>24)&255];
+  for(const e of entries){
+    const nameB=enc.encode(e.name);const data=e.data;const crc=crc32(data);
+    const lh=new Uint8Array([].concat(u32(0x04034b50),u16(20),u16(0),u16(0),u16(0),u16(0),u32(crc),u32(data.length),u32(data.length),u16(nameB.length),u16(0)));
+    chunks.push(lh,nameB,data);
+    central.push(new Uint8Array([].concat(u32(0x02014b50),u16(20),u16(20),u16(0),u16(0),u16(0),u16(0),u32(crc),u32(data.length),u32(data.length),u16(nameB.length),u16(0),u16(0),u16(0),u16(0),u32(0),u32(offset))),nameB);
+    offset+=lh.length+nameB.length+data.length;
+  }
+  let cs=0;central.forEach(c=>cs+=c.length);
+  const eocd=new Uint8Array([].concat(u32(0x06054b50),u16(0),u16(0),u16(entries.length),u16(entries.length),u32(cs),u32(offset),u16(0)));
+  return new Blob([...chunks,...central,eocd],{type:"application/zip"});
+}
+async function exportZip(items){
+  const enc=new TextEncoder(); const entries=[]; const used={};
+  for (const it of items){
+    let stem = clean(it.name).replace(/[^\w\- ]+/g,"").replace(/\s+/g,"_") || "img";
+    if (used[stem]) stem += "_" + (used[stem]++); else used[stem]=1;
+    const ext = (it.name.match(IMG_RE)||[".png"])[0];
+    const bytes = await bytesFor(it);
+    const buf = new Uint8Array(await bytes.arrayBuffer());
+    entries.push({ name: stem+ext, data: buf });
+    entries.push({ name: stem+".txt", data: enc.encode(captionFor(it.path)) });
+  }
+  const blob = makeZip(entries);
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="spark-dataset.zip";
+  document.body.append(a); a.click(); a.remove();
+  return items.length;
+}
+async function exportDataset(){
+  const items = state.items.filter(i => state.ds.has(i.path));
+  if (!items.length) return;
+  try{
+    const n = HAS_FS ? await exportToFolder(items) : await exportZip(items);
+    state.exportMsg = HAS_FS ? ("Exported "+n+" images + captions to the folder.") : ("Downloaded a zip of "+n+" images + captions.");
+  }catch(e){ state.exportMsg = e.name==="AbortError" ? "" : "Export failed: "+e.message; }
+  render();
+}
+
+// ---- render ----
+function render(){
+  $("#subline").textContent = state.activeSource === "drive"
+    ? "Live from Google Drive — the same library on every device."
+    : HAS_FS
+    ? "Random reference, study tools, and dataset prep — point it at your Google Drive folder."
+    : "Random reference and study tools — your images stay on your phone.";
+
+  const tools = $("#tools"); tools.innerHTML = "";
+  if (state.items.length){
+    if (state.activeSource === "drive"){
+      const rf=el(`<button class="ghost">${state.gdBusy?"Refreshing…":"Refresh"}</button>`); rf.onclick=refreshDrive; rf.disabled=state.gdBusy;
+      const sh=el(`<button class="ghost">Share setup</button>`);
+      sh.onclick=()=>{
+        const link=location.origin+location.pathname+"?cid="+encodeURIComponent(state.gd.clientId)+"&folder="+encodeURIComponent(state.gd.folderLink);
+        const ok=()=>{ sh.textContent="Copied!"; setTimeout(()=>{ sh.textContent="Share setup"; },1600); };
+        if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(link).then(ok).catch(()=>prompt("Copy this setup link:",link));
+        else prompt("Copy this setup link:",link);
+      };
+      const dc=el(`<button class="ghost">Disconnect</button>`); dc.onclick=disconnectDrive;
+      tools.append(rf, sh, dc);
+    } else if (HAS_FS){ const b=el(`<button class="ghost">Change folder</button>`); b.onclick=chooseFolder; tools.append(b); }
+    else if (state.activeSource === "folder"){ const b=el(`<button class="ghost">Change folder</button>`); b.onclick=()=>folderInput.click(); tools.append(b); }
+    else{
+      const add=el(`<button class="ghost">Add images</button>`); add.onclick=()=>filesInput.click();
+      const clr=el(`<button class="ghost">Clear</button>`); clr.onclick=clearLibrary;
+      tools.append(add, clr);
+    }
+  }
+
+  const app = $("#app"); app.innerHTML = "";
+
+  if (!state.items.length){
+    // Google Drive — live, same library on phone and desktop
+    const gp = el(`<div class="panel"></div>`);
+    gp.append(el(`<div class="ph"><h3>Google Drive</h3><span class="m">same library everywhere</span></div>`));
+    const gpb = el(`<div class="pb"></div>`);
+    const gr = el(`<div class="dsrow"></div>`);
+    const cid = el(`<input class="dsin" placeholder="OAuth Client ID" style="min-width:230px">`); cid.value = state.gd.clientId||"";
+    const flk = el(`<input class="dsin" placeholder="Drive folder link" style="min-width:230px">`); flk.value = state.gd.folderLink||"";
+    const cbtn = el(`<button class="primary">${state.gdBusy?"Connecting…":"Connect"}</button>`); cbtn.onclick=()=>connectDrive(cid.value, flk.value);
+    gr.append(cid, flk, cbtn); gpb.append(gr);
+    if (state.gdMsg) gpb.append(el(`<div class="warnnote" style="margin-top:8px">${esc(state.gdMsg)}</div>`));
+    gp.append(gpb); app.append(gp);
+    app.append(el(`<div class="foot" style="margin:2px 0 16px">— or, this device only —</div>`));
+    if (HAS_FS){
+      const drop=el(`<div class="drop"><h2>Choose your library folder</h2>
+        <p>Point Spark at a folder on your computer — for example your synced Google Drive folder. It shows one image at random, with study tools and dataset export. Nothing is uploaded, and subfolders become boards you can toggle.</p>
+        <div class="pickrow"></div></div>`);
+      const pr=drop.querySelector(".pickrow");
+      const choose=el(`<button class="pick">Choose folder</button>`); choose.onclick=chooseFolder; pr.append(choose);
+      if (state.rememberedName){ const re=el(`<button class="pick alt">Reopen "${esc(state.rememberedName)}"</button>`); re.onclick=reopenRemembered; pr.append(re); }
+      app.append(drop);
+      app.append(el(`<div class="foot">Tip: drop your library into your Google Drive desktop folder and choose that — it's the same bank everywhere it syncs. (Live phone access comes with the next step.)</div>`));
+    } else if (!IS_MOBILE) {
+      // desktop browser without the File System Access API (e.g. opened as a file, or Firefox/Safari):
+      // use the standard folder input, which still gives subfolder boards.
+      const drop=el(`<div class="drop"><h2>Choose your library folder</h2>
+        <p>Point Spark at a folder on your computer — for example your synced Google Drive folder. Subfolders become boards, and all the study tools work. Nothing is uploaded.</p>
+        <div class="pickrow"></div></div>`);
+      const pr=drop.querySelector(".pickrow");
+      const choose=el(`<button class="pick">Choose folder</button>`); choose.onclick=()=>folderInput.click(); pr.append(choose);
+      const alt=el(`<button class="pick alt">Or pick images</button>`); alt.onclick=()=>filesInput.click(); pr.append(alt);
+      app.append(drop);
+      app.append(el(`<div class="foot">Your browser re-asks for the folder each visit (one click). To have it remembered automatically, open this page from Chrome or Edge over http://localhost instead of a file — that's the same hosting we'll set up for phone access.</div>`));
+    } else {
+      const drop=el(`<div class="drop"><h2>Add some images</h2>
+        <p>Pick images from your Photos or Files and Spark shows one at random, with study tools for reference and value work. They're cached on this device so they're here next time. Nothing is uploaded.</p>
+        <div class="pickrow"></div></div>`);
+      const pr=drop.querySelector(".pickrow");
+      const add=el(`<button class="pick">Add images</button>`); add.onclick=()=>filesInput.click(); pr.append(add);
+      app.append(drop);
+      app.append(el(`<div class="foot">Tip: add a batch now, and add more any time — they stack up in your library.</div>`));
+    }
+    return;
+  }
+
+  const bs = boards();
+  if (bs.length > 1){
+    const panel=el(`<div class="panel"></div>`);
+    const head=el(`<div class="ph"><h3>Boards (subfolders)</h3><span class="m">${bs.length-state.boardsOff.size} of ${bs.length} ${state.panelOpen?"▾":"▸"}</span></div>`);
+    head.onclick=()=>{state.panelOpen=!state.panelOpen;render();}; panel.append(head);
+    if (state.panelOpen){
+      const body=el(`<div class="pb"></div>`); const chips=el(`<div class="chips"></div>`);
+      bs.forEach(b=>{ const c=el(`<button class="bchip ${state.boardsOff.has(b.name)?"":"sel"}">${esc(b.name)}<span class="n">${b.count}</span></button>`);
+        c.onclick=()=>{ if(state.boardsOff.has(b.name))state.boardsOff.delete(b.name); else state.boardsOff.add(b.name); saveOff(); resetDeck(); render(); }; chips.append(c); });
+      body.append(chips);
+      const act=el(`<div class="pactions"></div>`);
+      const all=el(`<button class="ghost">Select all</button>`); all.onclick=()=>{state.boardsOff.clear();saveOff();resetDeck();render();};
+      const none=el(`<button class="ghost">Clear</button>`); none.onclick=()=>{bs.forEach(b=>state.boardsOff.add(b.name));saveOff();resetDeck();render();};
+      act.append(all,none,el(`<span class="tiny">${state.items.length.toLocaleString()} images</span>`)); body.append(act); panel.append(body);
+    }
+    app.append(panel);
+  }
+
+  app.append(gridPanel("Favorites", state.items.filter(i=>state.favs.has(i.path)), "favOpen",
+    (f)=>{ state.favs.delete(f.path); saveFavs(); if(state.source==="favorites")resetDeck(); render(); },
+    "Nothing saved yet — hit ♥ Save on an image you like."));
+
+  const dsList = state.items.filter(i=>state.ds.has(i.path));
+  const dsp = gridPanel("LoRA dataset", dsList, "dsOpen",
+    (f)=>{ state.ds.delete(f.path); saveDs(); if(state.source==="dataset")resetDeck(); render(); },
+    "Empty — hit ＋ Dataset on images you want to train on.");
+  if (state.dsOpen){
+    const body=dsp.querySelector(".pb");
+    const rowEl=el(`<div class="dsrow" style="margin-top:12px"></div>`);
+    const trig=el(`<input class="dsin" placeholder="trigger word, e.g. jlayelstyle" value="${esc(state.trigger)}">`);
+    trig.oninput=(e)=>{ state.trigger=e.target.value; saveTrig(); };
+    const btn=el(`<button class="primary" ${dsList.length?"":"disabled"}>${HAS_FS?"Export":"Download zip"} ${dsList.length||""}</button>`);
+    btn.onclick=exportDataset; rowEl.append(trig,btn); body.append(rowEl);
+    body.append(el(`<div class="tiny" style="margin-top:8px">Each image gets a same-name .txt caption ("trigger, tag1, tag2…") — the format kohya / ComfyUI training expects. ${HAS_FS?"Writes into a folder you pick.":"Downloads as a zip; unzip it on your computer for training."}</div>`));
+    if (state.exportMsg) body.append(el(`<div class="${state.exportMsg.startsWith("Export")||state.exportMsg.startsWith("Down")?"oknote":"warnnote"}" style="margin-top:8px">${esc(state.exportMsg)}</div>`));
+  }
+  app.append(dsp);
+
+  const hiddenList = state.items.filter(i=>state.hidden.has(i.path));
+  if (hiddenList.length){
+    app.append(gridPanel("Never show", hiddenList, "hiddenOpen",
+      (f)=>{ unhide(f.path); resetDeck(); render(); },
+      "Nothing hidden."));
+  }
+
+  const undrawnCount = state.items.filter(i=>!state.drawnImgs.has(i.path) && !state.boardsOff.has(i.board) && !state.hidden.has(i.path)).length;
+  const seg=el(`<div class="seg">
+    <button class="${state.source==="boards"?"on":""}" data-s="boards">All</button>
+    <button class="${state.source==="favorites"?"on":""}" data-s="favorites">Favorites</button>
+    <button class="${state.source==="dataset"?"on":""}" data-s="dataset">Dataset</button>
+    <button class="${state.source==="undrawn"?"on":""}" data-s="undrawn">Undrawn ${undrawnCount?`<span style="color:var(--mag)">${undrawnCount}</span>`:""}</button></div>`);
+  seg.querySelectorAll("button").forEach(b=>b.onclick=()=>{state.source=b.dataset.s;resetDeck();}); app.append(seg);
+
+  const st=el(`<div class="studio"></div>`);
+  st.append(toggleBtn("Flip","flip","F")); st.append(toggleBtn("Gray","gray","G"));
+  const vb=el(`<button class="tb ${state.values?"on":""}">${state.values?"Notan "+state.values:"Notan"}<kbd>V</kbd></button>`);
+  vb.onclick=()=>{state.values=state.values===0?2:state.values===2?3:state.values===3?4:0;render();}; st.append(vb);
+  const bb=el(`<button class="tb ${state.blur?"on":""}">${state.blur?"Squint "+state.blur:"Squint"}<kbd>B</kbd></button>`);
+  bb.onclick=()=>{state.blur=(state.blur+1)%3;render();}; st.append(bb);
+  const gb=el(`<button class="tb ${state.grid?"on":""}">${state.grid===1?"Thirds":"Grid"}<kbd>R</kbd></button>`);
+  gb.onclick=()=>{state.grid=(state.grid+1)%3;render();}; st.append(gb);
+  const pb2=el(`<button class="tb ${state.palette?"on":""}">Palette<kbd>P</kbd></button>`); pb2.onclick=togglePalette; st.append(pb2);
+  const sel=el(`<select class="tsel"><option value="30">30s</option><option value="60">1m</option><option value="120">2m</option><option value="300">5m</option><option value="600">10m</option></select>`);
+  sel.value=String(state.timerDur); sel.onchange=(e)=>{state.timerDur=+e.target.value; if(state.timerOn)state.timerLeft=state.timerDur;};
+  const tbtn=el(`<button class="tb ${state.timerOn?"on":""}">${state.timerOn?"Stop":"Timer"}<kbd>T</kbd></button>`);
+  tbtn.onclick=()=>{state.timerOn?stopTimer():startTimer();}; st.append(sel,tbtn);
+  app.append(st);
+
+  // gesture session mode
+  const gbar=el(`<div class="gbar"></div>`);
+  if(state.gesture.on){
+    const g=state.gesture;
+    gbar.append(el(`<span class="gstat">◈ Gesture <b>${g.idx+1}/${g.plan.length}</b> · ${fmtDur(g.plan[g.idx]||0)}</span>`));
+    const skip=el(`<button class="tb">Skip ›</button>`); skip.onclick=draw; gbar.append(skip);
+    const stop=el(`<button class="tb on">Stop</button>`); stop.onclick=stopGesture; gbar.append(stop);
+  } else {
+    gbar.append(el(`<span class="gstat">Gesture drill</span>`));
+    const gsel=el(`<select class="tsel"></select>`);
+    Object.entries(GESTURE_PRESETS).forEach(([k,v])=>{ const o=el(`<option value="${k}">${esc(v.label)}</option>`); gsel.append(o); });
+    gsel.value=state.gesture.preset; gsel.onchange=(e)=>{ state.gesture.preset=e.target.value; };
+    const start=el(`<button class="tb">▶ Start</button>`); start.onclick=()=>startGesture(state.gesture.preset);
+    gbar.append(gsel,start);
+    if(state.gesture.doneMsg) gbar.append(el(`<span class="oknote">${esc(state.gesture.doneMsg)}</span>`));
+  }
+  app.append(gbar);
+
+  const bar=el(`<div class="tbar ${state.timerOn||state.gesture.on?"show":""}"><i id="tprog"></i></div>`); app.append(bar); updateTimerBar();
+
+  const p = pool(); const frame=el(`<div class="frame"></div>`);
+  if (!p.length){
+    const msg = state.source==="favorites" ? "No favorites yet — save a few first."
+      : state.source==="dataset" ? "Dataset is empty — add images with ＋ Dataset."
+      : "No boards selected. Pick at least one above.";
+    frame.append(el(`<div class="plc">${msg}</div>`));
+  } else if (state.current && !state.currentUrl){
+    frame.append(el(`<div class="plc">${state.loadErr?"Couldn't load this image.":"Loading…"}</div>`));
+  } else if (state.current){
+    const box=el(`<div class="imgbox"></div>`); const filters=[];
+    if (state.gray && !state.values) filters.push("grayscale(1)");
+    if (state.blur) filters.push(`blur(${state.blur*4}px)`);
+    const styleF=(filters.length?"filter:"+filters.join(" ")+";":"")+(state.flip?"transform:scaleX(-1);":"");
+    if (state.values){
+      const cv=el(`<canvas class="pinimg reveal" style="${styleF}" title="Click for another"></canvas>`); cv.onclick=draw;
+      const img=new Image(); img.onload=()=>drawProcessed(cv,img,state.values); img.src=state.currentUrl; box.append(cv);
+    } else {
+      const img=el(`<img class="pinimg reveal" src="${state.currentUrl}" alt="${esc(state.current.name)}" style="${styleF}" title="Click for another">`); img.onclick=draw; box.append(img);
+    }
+    if (state.grid) box.append(el(`<div class="grid-ov ${state.grid===1?"thirds":"fine"}"></div>`));
+    frame.append(box);
+  }
+  app.append(frame);
+
+  if (state.palette && state.current){
+    const pal=el(`<div class="palette"></div>`);
+    state.palette.forEach(hex=>{ const sw=el(`<button class="sw" title="Copy ${hex}"><i style="background:${hex}"></i><span>${hex}</span></button>`);
+      sw.onclick=()=>{ navigator.clipboard&&navigator.clipboard.writeText(hex); const s=sw.querySelector("span"); s.textContent="copied"; setTimeout(()=>s.textContent=hex,900); }; pal.append(sw); });
+    app.append(pal);
+  }
+
+  if (state.current && p.length){
+    const meta=el(`<div class="meta"></div>`);
+    if (state.current.name) meta.append(el(`<div class="pt">${esc(state.current.name)}</div>`));
+    const row=el(`<div class="row"></div>`);
+    if (state.current.board && state.current.board!==NO_SUB) row.append(el(`<span class="chip board">${esc(state.current.board)}</span>`));
+    row.append(el(`<a class="chip" href="${urlFor(state.current.path)}" target="_blank" rel="noreferrer">Open full size ↗</a>`));
+    const dl=el(`<button class="chip">⤓ Download</button>`); dl.onclick=downloadCurrent; row.append(dl);
+    const fav=el(`<button class="favb ${state.favs.has(state.current.path)?"saved":""}">${state.favs.has(state.current.path)?"♥ Saved":"♡ Save"}</button>`);
+    fav.onclick=()=>{ const pt=state.current.path; state.favs.has(pt)?state.favs.delete(pt):state.favs.add(pt); saveFavs(); render(); }; row.append(fav);
+    const dsb=el(`<button class="favb ${state.ds.has(state.current.path)?"inset":""}">${state.ds.has(state.current.path)?"✓ In dataset":"＋ Dataset"}</button>`);
+    dsb.onclick=()=>{ toggleDs(state.current.path); render(); }; row.append(dsb);
+    const dn=el(`<button class="favb ${state.drawnImgs.has(state.current.path)?"inset":""}">${state.drawnImgs.has(state.current.path)?"✓ Drawn":"○ Mark drawn"}</button>`);
+    dn.onclick=()=>{ toggleDrawn(state.current.path); render(); }; row.append(dn);
+    const hd=el(`<button class="favb hidebtn">⊘ Never show</button>`);
+    hd.onclick=()=>{ const pt=state.current.path; hideImage(pt); bag=bag.filter(x=>x!==pt); showImage(); }; row.append(hd);
+    meta.append(row);
+    const tr=el(`<div class="tagrow"></div>`);
+    tagsFor(state.current.path).forEach(t=>{ const tg=el(`<span class="tag">${esc(t)}<b title="remove">×</b></span>`); tg.querySelector("b").onclick=()=>{rmTag(state.current.path,t);render();}; tr.append(tg); });
+    const ti=el(`<input class="taginput" placeholder="+ tag (enter)">`);
+    ti.onkeydown=(e)=>{ if(e.key==="Enter"&&ti.value.trim()){ addTag(state.current.path,ti.value); render(); const ni=$(".taginput"); if(ni)ni.focus(); } };
+    tr.append(ti); meta.append(tr); app.append(meta);
+  }
+
+  if (p.length){
+    const ctr=el(`<div class="ctr"></div>`);
+    const d=el(`<button class="draw">${state.gesture.on?"Skip this pose":"Show me another"}</button>`); d.onclick=draw; ctr.append(d);
+    const srcLabel = state.source==="favorites"?"favorites":state.source==="dataset"?"dataset images":state.source==="undrawn"?"undrawn":"images";
+    ctr.append(el(`<div class="count"><b>${p.length.toLocaleString()}</b> ${srcLabel} · shown ${state.drawn} · <b style="color:var(--mag)">${state.drawnImgs.size.toLocaleString()}</b> drawn</div>`));
+    ctr.append(el(`<div class="hint">${HAS_FS?"space next · F flip · G gray · V notan · B squint · R grid · P palette · D dataset · S save · H hide":"tap image for the next one"}</div>`));
+    app.append(ctr);
+  }
+}
+
+function toggleBtn(label,key,kbd){ const b=el(`<button class="tb ${state[key]?"on":""}">${label}<kbd>${kbd}</kbd></button>`); b.onclick=()=>{state[key]=!state[key];render();}; return b; }
+function gridPanel(title,list,openKey,onRemove,emptyMsg){
+  const panel=el(`<div class="panel"></div>`);
+  const noun = title==="LoRA dataset"?"images":title==="Never show"?"hidden":"saved";
+  const head=el(`<div class="ph"><h3>${title}</h3><span class="m">${list.length} ${noun} ${state[openKey]?"▾":"▸"}</span></div>`);
+  head.onclick=()=>{state[openKey]=!state[openKey];render();}; panel.append(head);
+  if (state[openKey]){
+    const body=el(`<div class="pb"></div>`);
+    if (!list.length) body.append(el(`<div class="fe">${emptyMsg}</div>`));
+    else{ const grid=el(`<div class="fg"></div>`); list.forEach(f=>{ const cell=el(`<div class="fc"><img alt="${esc(f.name)}" loading="lazy"><button class="x">×</button></div>`); const im=cell.querySelector("img"); const c=urlFor(f.path); if(c) im.src=c; else ensureUrl(f).then(u=>{ im.src=u; }).catch(()=>{}); cell.querySelector(".x").onclick=()=>onRemove(f); grid.append(cell); }); body.append(grid); }
+    panel.append(body);
+  }
+  return panel;
+}
+function togglePalette(){ if(state.palette){state.palette=null;render();return;} if(!state.current||!state.currentUrl)return; const img=new Image(); img.onload=()=>{state.palette=extractPalette(img);render();}; img.src=state.currentUrl; }
+
+// inputs
+const folderInput=el(`<input type="file" style="display:none">`);
+folderInput.setAttribute("webkitdirectory","");folderInput.setAttribute("directory","");folderInput.setAttribute("mozdirectory","");
+folderInput.onchange=e=>loadFromFileList(e.target.files); document.body.append(folderInput);
+const filesInput=el(`<input type="file" accept="image/*" multiple style="display:none">`);
+filesInput.onchange=e=>{ addImages(e.target.files); filesInput.value=""; }; document.body.append(filesInput);
+
+window.addEventListener("keydown", e=>{
+  if (!state.items.length) return;
+  const t=document.activeElement.tagName; if(t==="INPUT"||t==="SELECT"||t==="TEXTAREA")return;
+  switch(e.code){
+    case "Space": case "ArrowRight": e.preventDefault(); draw(); break;
+    case "KeyF": state.flip=!state.flip; render(); break;
+    case "KeyG": state.gray=!state.gray; render(); break;
+    case "KeyV": state.values=state.values===0?2:state.values===2?3:state.values===3?4:0; render(); break;
+    case "KeyB": state.blur=(state.blur+1)%3; render(); break;
+    case "KeyR": state.grid=(state.grid+1)%3; render(); break;
+    case "KeyP": togglePalette(); break;
+    case "KeyT": state.timerOn?stopTimer():startTimer(); break;
+    case "KeyD": if(state.current){toggleDs(state.current.path);render();} break;
+    case "KeyS": if(state.current){const pt=state.current.path; state.favs.has(pt)?state.favs.delete(pt):state.favs.add(pt); saveFavs(); render();} break;
+    case "KeyH": if(state.current){const pt=state.current.path; hideImage(pt); bag=bag.filter(x=>x!==pt); showImage();} break;
+  }
+});
+
+(async function init(){
+  const qs = new URLSearchParams(location.search);
+  if (qs.get("cid") || qs.get("folder")){
+    const cid = qs.get("cid") || state.gd.clientId || "";
+    const folderLink = qs.get("folder") || state.gd.folderLink || "";
+    state.gd = { clientId: cid, folderLink, folderId: parseFolderId(folderLink) };
+    localStorage.setItem("sparkst_gd", JSON.stringify(state.gd));
+    try{ history.replaceState(null,"",location.pathname); }catch(e){}
+  }
+  // Draw the UI immediately so the Connect panel is always reachable, even if Google is slow or offline.
+  if (HAS_FS){ try{ const h=await idbGet("dir"); if(h) state.rememberedName=h.name; }catch(e){} }
+  else { try{ const recs=await libAll(); if(recs.length) await loadLibrary(); }catch(e){} }
+  render();
+  // Then try to reconnect to Google Drive quietly, without blocking the page.
+  if (state.gd && state.gd.clientId && state.gd.folderId && !state.items.length){ autoLoadDrive().catch(()=>{}); }
+})();
+</script>
+</body>
+</html>
