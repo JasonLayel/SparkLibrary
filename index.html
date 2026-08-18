@@ -1131,8 +1131,8 @@ function paintLightbox(){
 }
 function lbLoadOnStage(){
   const it=lbCurrent(); if(!it) return;
-  const k=state.lightbox.kind;
-  if(k==="favorites"||k==="dataset") state.source=k;
+  // Just show this image on the main stage; keep the current draw source (All/boards/etc.)
+  // so "Show me another" keeps pulling from the full library, not only favorites.
   state.current=it; state.currentUrl=null; state.loadErr=false; state.palette=null; bag=[];
   closeLightbox();
   const cur=it;
