@@ -164,6 +164,43 @@
   .pick.alt:hover{border-color:var(--gold-dim);box-shadow:0 0 12px rgba(38,231,255,.2);}
   .foot{color:var(--muted);font-size:11px;text-align:center;margin-top:14px;line-height:1.5;font-family:var(--mono);letter-spacing:.4px;}
 
+  .fc{cursor:zoom-in;}
+  .fc .x{z-index:2;}
+  .fhint{color:var(--muted);font-size:11px;font-family:var(--mono);letter-spacing:.3px;margin-top:10px;}
+
+  /* lightbox — zoom viewer for favorites & grids */
+  .lb{position:fixed;inset:0;z-index:10000;display:flex;flex-direction:column;
+    background:rgba(4,5,10,.94);backdrop-filter:blur(5px);animation:lbin .18s ease;}
+  @keyframes lbin{from{opacity:0;}to{opacity:1;}}
+  .lb-top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 16px;z-index:2;}
+  .lb-name{font-family:var(--disp);font-size:14px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;
+    color:var(--ink);max-width:56vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    text-shadow:0 0 12px rgba(38,231,255,.25);}
+  .lb-tr{display:flex;gap:10px;align-items:center;}
+  .lb-count{color:var(--muted);font-size:11px;font-family:var(--mono);letter-spacing:.6px;white-space:nowrap;}
+  .lb-stage{flex:1;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;
+    touch-action:none;margin:0 10px;}
+  .lb-stage::before,.lb-stage::after{content:"";position:absolute;width:22px;height:22px;border:2px solid var(--gold);pointer-events:none;z-index:1;opacity:.8;}
+  .lb-stage::before{top:4px;left:4px;border-right:0;border-bottom:0;box-shadow:-2px -2px 12px var(--glowc);}
+  .lb-stage::after{bottom:4px;right:4px;border-left:0;border-top:0;box-shadow:2px 2px 12px var(--glowc);}
+  .lb-stage.zoomed{cursor:grab;} .lb-stage.panning{cursor:grabbing;}
+  .lb-img{max-width:94vw;max-height:100%;display:block;user-select:none;-webkit-user-drag:none;
+    will-change:transform;transform-origin:center center;border:1px solid rgba(38,231,255,.3);border-radius:4px;
+    box-shadow:0 0 0 1px rgba(255,45,149,.14),0 20px 60px rgba(0,0,0,.65),0 0 40px rgba(38,231,255,.16);}
+  .lb-plc{color:var(--muted);font-family:var(--mono);letter-spacing:.4px;text-align:center;padding:30px;}
+  .lb-nav{position:absolute;top:50%;transform:translateY(-50%);background:rgba(5,7,13,.6);
+    border:1px solid var(--line2);color:var(--ink);width:44px;height:44px;border-radius:5px;
+    font-size:22px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;
+    transition:.15s;z-index:2;font-family:var(--disp);}
+  .lb-nav:hover{color:var(--gold);border-color:var(--gold-dim);box-shadow:0 0 14px rgba(38,231,255,.3);}
+  .lb-prev{left:12px;} .lb-next{right:12px;}
+  .lb-bot{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;
+    padding:12px 16px calc(12px + env(safe-area-inset-bottom));z-index:2;}
+  .lb-zoom{display:flex;align-items:center;border:1px solid var(--line2);border-radius:4px;overflow:hidden;}
+  .lb-zoom button{background:none;border:none;color:var(--ink);font-family:var(--mono);font-size:15px;
+    width:36px;height:32px;cursor:pointer;line-height:1;}
+  .lb-zoom button:hover{background:rgba(38,231,255,.14);color:var(--gold);}
+  .lb-zoom .lvl{font-size:11px;color:var(--muted);min-width:52px;text-align:center;font-family:var(--mono);letter-spacing:.4px;}
 </style>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
@@ -218,8 +255,12 @@ const state = {
   activeSource:null,                                     // 'folder' | 'photos' | 'drive'
   gd: JSON.parse(localStorage.getItem("sparkst_gd")||'{"clientId":"","folderLink":"","folderId":""}'),
   gdMsg:"", gdBusy:false, token:null, tokenExp:0, currentUrl:null, loadErr:false, metaId:null,
+  lightbox:{ open:false, kind:"favorites", index:0, url:null, loadErr:false },
 };
 const urlCache = new Map();
+// zoom/pan controller for the favorites/grid lightbox
+const lbz = { scale:1, tx:0, ty:0, dragging:false, sx:0, sy:0, px:0, py:0, pinchStart:0, scaleStart:1 };
+const LB_MAX = 6;
 let bag = [], timerId = null;
 
 const saveFavs=()=>{ localStorage.setItem(LS.favs, JSON.stringify([...state.favs])); scheduleMetaSave(); };
@@ -587,8 +628,8 @@ function extFor(it, blob){
   const t = (blob && blob.type) || "";
   return t.includes("png")?".png":t.includes("webp")?".webp":t.includes("gif")?".gif":t.includes("avif")?".avif":t.includes("bmp")?".bmp":".jpg";
 }
-async function downloadCurrent(){
-  const it = state.current; if(!it) return;
+async function downloadItem(it){
+  if(!it) return;
   try{
     const blob = await bytesFor(it);
     const ext = extFor(it, blob);
@@ -599,6 +640,7 @@ async function downloadCurrent(){
     setTimeout(()=>URL.revokeObjectURL(url), 4000);
   }catch(e){ state.exportMsg = "Couldn't download this image: "+(e.message||e); render(); }
 }
+function downloadCurrent(){ return downloadItem(state.current); }
 function boards(){
   const m = new Map();
   state.items.forEach(i => m.set(i.board, (m.get(i.board)||0)+1));
@@ -706,6 +748,7 @@ async function exportDataset(){
 
 // ---- render ----
 function render(){
+  syncLightbox();
   $("#subline").textContent = state.activeSource === "drive"
     ? "Live from Google Drive — the same library on every device."
     : HAS_FS
@@ -801,12 +844,12 @@ function render(){
 
   app.append(gridPanel("Favorites", state.items.filter(i=>state.favs.has(i.path)), "favOpen",
     (f)=>{ state.favs.delete(f.path); saveFavs(); if(state.source==="favorites")resetDeck(); render(); },
-    "Nothing saved yet — hit ♥ Save on an image you like."));
+    "Nothing saved yet — hit ♥ Save on an image you like.", "favorites"));
 
   const dsList = state.items.filter(i=>state.ds.has(i.path));
   const dsp = gridPanel("LoRA dataset", dsList, "dsOpen",
     (f)=>{ state.ds.delete(f.path); saveDs(); if(state.source==="dataset")resetDeck(); render(); },
-    "Empty — hit ＋ Dataset on images you want to train on.");
+    "Empty — hit ＋ Dataset on images you want to train on.", "dataset");
   if (state.dsOpen){
     const body=dsp.querySelector(".pb");
     const rowEl=el(`<div class="dsrow" style="margin-top:12px"></div>`);
@@ -823,7 +866,7 @@ function render(){
   if (hiddenList.length){
     app.append(gridPanel("Never show", hiddenList, "hiddenOpen",
       (f)=>{ unhide(f.path); resetDeck(); render(); },
-      "Nothing hidden."));
+      "Nothing hidden.", "hidden"));
   }
 
   const undrawnCount = state.items.filter(i=>!state.drawnImgs.has(i.path) && !state.boardsOff.has(i.board) && !state.hidden.has(i.path)).length;
@@ -934,7 +977,7 @@ function render(){
 }
 
 function toggleBtn(label,key,kbd){ const b=el(`<button class="tb ${state[key]?"on":""}">${label}<kbd>${kbd}</kbd></button>`); b.onclick=()=>{state[key]=!state[key];render();}; return b; }
-function gridPanel(title,list,openKey,onRemove,emptyMsg){
+function gridPanel(title,list,openKey,onRemove,emptyMsg,kind){
   const panel=el(`<div class="panel"></div>`);
   const noun = title==="LoRA dataset"?"images":title==="Never show"?"hidden":"saved";
   const head=el(`<div class="ph"><h3>${title}</h3><span class="m">${list.length} ${noun} ${state[openKey]?"▾":"▸"}</span></div>`);
@@ -942,11 +985,195 @@ function gridPanel(title,list,openKey,onRemove,emptyMsg){
   if (state[openKey]){
     const body=el(`<div class="pb"></div>`);
     if (!list.length) body.append(el(`<div class="fe">${emptyMsg}</div>`));
-    else{ const grid=el(`<div class="fg"></div>`); list.forEach(f=>{ const cell=el(`<div class="fc"><img alt="${esc(f.name)}" loading="lazy"><button class="x">×</button></div>`); const im=cell.querySelector("img"); const c=urlFor(f.path); if(c) im.src=c; else ensureUrl(f).then(u=>{ im.src=u; }).catch(()=>{}); cell.querySelector(".x").onclick=()=>onRemove(f); grid.append(cell); }); body.append(grid); }
+    else{
+      const grid=el(`<div class="fg"></div>`);
+      list.forEach((f,idx)=>{ const cell=el(`<div class="fc" title="Click to open & zoom"><img alt="${esc(f.name)}" loading="lazy"><button class="x" title="Remove">×</button></div>`); const im=cell.querySelector("img"); const c=urlFor(f.path); if(c) im.src=c; else ensureUrl(f).then(u=>{ im.src=u; }).catch(()=>{}); if(kind) im.onclick=()=>openLightbox(kind,idx); cell.querySelector(".x").onclick=(e)=>{ e.stopPropagation(); onRemove(f); }; grid.append(cell); });
+      body.append(grid);
+      if(kind) body.append(el(`<div class="fhint">Click any image to open the zoom viewer — scroll / ± to zoom, drag to pan, ← → to move.</div>`));
+    }
     panel.append(body);
   }
   return panel;
 }
+// ---------- lightbox (zoom viewer for favorites & grids) ----------
+function lbList(kind){
+  if(kind==="favorites") return state.items.filter(i=>state.favs.has(i.path));
+  if(kind==="dataset")   return state.items.filter(i=>state.ds.has(i.path));
+  if(kind==="hidden")    return state.items.filter(i=>state.hidden.has(i.path));
+  return [];
+}
+function lbCurrent(){ return lbList(state.lightbox.kind)[state.lightbox.index] || null; }
+function openLightbox(kind, index){ state.lightbox.open=true; state.lightbox.kind=kind; state.lightbox.index=index; lbResetZoom(); render(); }
+function closeLightbox(){ state.lightbox.open=false; render(); }
+function lbNav(d){
+  const list=lbList(state.lightbox.kind); if(list.length<2) return;
+  state.lightbox.index=(state.lightbox.index+d+list.length)%list.length;
+  lbResetZoom(); lbLoadImage(); paintLightbox();
+}
+function lbResetZoom(){ lbz.scale=1; lbz.tx=0; lbz.ty=0; }
+function lbApplyZoom(){
+  const img=$(".lb-img"); if(!img) return;
+  img.style.transform=`translate(${lbz.tx}px,${lbz.ty}px) scale(${lbz.scale})`;
+  const st=$(".lb-stage"); if(st) st.classList.toggle("zoomed", lbz.scale>1.01);
+  const lvl=$(".lb-zoom .lvl"); if(lvl) lvl.textContent=Math.round(lbz.scale*100)+"%";
+}
+function lbClampPan(){
+  const img=$(".lb-img"), st=$(".lb-stage"); if(!img||!st) return;
+  const r=st.getBoundingClientRect();
+  const ox=Math.max(0,(img.clientWidth*lbz.scale - r.width)/2);
+  const oy=Math.max(0,(img.clientHeight*lbz.scale - r.height)/2);
+  lbz.tx=Math.max(-ox,Math.min(ox,lbz.tx));
+  lbz.ty=Math.max(-oy,Math.min(oy,lbz.ty));
+}
+function lbSetScale(next){
+  next=Math.min(LB_MAX,Math.max(1,next));
+  lbz.scale=next;
+  if(next<=1.01){ lbz.tx=0; lbz.ty=0; }
+  lbClampPan(); lbApplyZoom();
+}
+// load the current item's full-res object URL, then paint
+function lbLoadImage(){
+  const it=lbCurrent(); state.lightbox.url=null; state.lightbox.loadErr=false;
+  if(!it){ paintLightbox(); return; }
+  const cached=urlFor(it.path);
+  const set=(u)=>{ if(state.lightbox.open && lbCurrent()===it){ state.lightbox.url=u; paintLightbox(); } };
+  if(cached) set(cached);
+  else ensureUrl(it).then(set).catch(()=>{ if(state.lightbox.open && lbCurrent()===it){ state.lightbox.loadErr=true; paintLightbox(); } });
+}
+function syncLightbox(){
+  const existing=document.querySelector(".lb");
+  const list=lbList(state.lightbox.kind);
+  if(state.lightbox.open && list.length){
+    if(state.lightbox.index>=list.length) state.lightbox.index=list.length-1;
+    if(!existing){ document.body.appendChild(buildLightbox()); document.body.style.overflow="hidden"; lbLoadImage(); }
+    paintLightbox();
+  } else {
+    if(existing) existing.remove();
+    document.body.style.overflow="";
+    if(state.lightbox.open && !list.length) state.lightbox.open=false;
+  }
+}
+function buildLightbox(){
+  const ov=el(`<div class="lb" role="dialog" aria-modal="true" aria-label="Image zoom viewer"></div>`);
+  ov.append(el(`<div class="lb-top"><div class="lb-name"></div>
+    <div class="lb-tr"><span class="lb-count"></span><button class="ghost lb-close" title="Close (Esc)">✕ Close</button></div></div>`));
+  const stage=el(`<div class="lb-stage"><img class="lb-img" alt=""></div>`);
+  const prev=el(`<button class="lb-nav lb-prev" title="Previous (←)">‹</button>`);
+  const next=el(`<button class="lb-nav lb-next" title="Next (→)">›</button>`);
+  stage.append(prev,next); ov.append(stage);
+  const bot=el(`<div class="lb-bot">
+    <div class="lb-zoom"><button class="z-out" title="Zoom out (−)">−</button><span class="lvl">100%</span><button class="z-in" title="Zoom in (+)">+</button><button class="z-reset" title="Reset (0)">⟳</button></div>
+    <span class="chip board lb-board" style="display:none"></span>
+    <a class="chip lb-open" target="_blank" rel="noreferrer">Open full size ↗</a>
+    <button class="chip lb-dl">⤓ Download</button>
+    <button class="favb lb-fav"></button>
+    <button class="favb lb-ds"></button>
+    <button class="primary lb-stage-btn" title="Show this on the main viewer">⤢ Load on stage</button>
+  </div>`);
+  ov.append(bot);
+  ov.querySelector(".lb-close").onclick=closeLightbox;
+  prev.onclick=()=>lbNav(-1); next.onclick=()=>lbNav(1);
+  bot.querySelector(".z-in").onclick=()=>lbSetScale(lbz.scale*1.4);
+  bot.querySelector(".z-out").onclick=()=>lbSetScale(lbz.scale/1.4);
+  bot.querySelector(".z-reset").onclick=()=>lbSetScale(1);
+  bot.querySelector(".lb-dl").onclick=()=>{ const it=lbCurrent(); if(it) downloadItem(it); };
+  bot.querySelector(".lb-fav").onclick=()=>{ const it=lbCurrent(); if(!it) return;
+    const wasFav=state.favs.has(it.path);
+    wasFav?state.favs.delete(it.path):state.favs.add(it.path); saveFavs();
+    // un-favoriting from the Favorites viewer drops it from this list — reload the new current image
+    if(wasFav && state.lightbox.kind==="favorites"){ if(state.source==="favorites") resetDeck(); lbResetZoom(); render(); lbLoadImage(); }
+    else paintLightbox();
+  };
+  bot.querySelector(".lb-ds").onclick=()=>{ const it=lbCurrent(); if(!it) return;
+    const wasIn=state.ds.has(it.path); toggleDs(it.path);
+    if(wasIn && state.lightbox.kind==="dataset"){ if(state.source==="dataset") resetDeck(); lbResetZoom(); render(); lbLoadImage(); }
+    else paintLightbox();
+  };
+  bot.querySelector(".lb-stage-btn").onclick=lbLoadOnStage;
+  lbWireZoom(stage);
+  return ov;
+}
+function paintLightbox(){
+  const ov=document.querySelector(".lb"); if(!ov) return;
+  const list=lbList(state.lightbox.kind); const it=list[state.lightbox.index];
+  if(!it){ closeLightbox(); return; }
+  ov.querySelector(".lb-name").textContent=it.name||"Untitled";
+  ov.querySelector(".lb-count").textContent=`${state.lightbox.index+1} / ${list.length}`;
+  const img=ov.querySelector(".lb-img");
+  const stage=ov.querySelector(".lb-stage");
+  let plc=ov.querySelector(".lb-plc");
+  if(state.lightbox.url){
+    if(plc){ plc.remove(); }
+    img.style.display="";
+    if(img.getAttribute("src")!==state.lightbox.url){ img.src=state.lightbox.url; }
+    lbApplyZoom();
+  } else {
+    img.style.display="none";
+    if(!plc){ plc=el(`<div class="lb-plc"></div>`); stage.insertBefore(plc, stage.firstChild); }
+    plc.textContent = state.lightbox.loadErr ? "Couldn't load this image." : "Loading…";
+  }
+  const board=ov.querySelector(".lb-board");
+  if(it.board && it.board!==NO_SUB){ board.textContent=it.board; board.style.display=""; } else board.style.display="none";
+  const open=ov.querySelector(".lb-open");
+  const u=state.lightbox.url||urlFor(it.path);
+  if(u){ open.href=u; open.style.display=""; } else open.style.display="none";
+  const fav=ov.querySelector(".lb-fav");
+  const isFav=state.favs.has(it.path);
+  fav.textContent=isFav?"♥ Saved":"♡ Save"; fav.classList.toggle("saved", isFav);
+  const ds=ov.querySelector(".lb-ds");
+  const inDs=state.ds.has(it.path);
+  ds.textContent=inDs?"✓ In dataset":"＋ Dataset"; ds.classList.toggle("inset", inDs);
+  const many=list.length>1;
+  ov.querySelector(".lb-prev").style.display=many?"":"none";
+  ov.querySelector(".lb-next").style.display=many?"":"none";
+}
+function lbLoadOnStage(){
+  const it=lbCurrent(); if(!it) return;
+  const k=state.lightbox.kind;
+  if(k==="favorites"||k==="dataset") state.source=k;
+  state.current=it; state.currentUrl=null; state.loadErr=false; state.palette=null; bag=[];
+  closeLightbox();
+  const cur=it;
+  ensureUrl(it).then(u=>{ if(state.current===cur){ state.currentUrl=u; render(); const fr=$(".frame"); if(fr) fr.scrollIntoView({behavior:"smooth",block:"center"}); } })
+    .catch(()=>{ if(state.current===cur){ state.loadErr=true; render(); } });
+}
+function lbWireZoom(stage){
+  const pointers=new Map();
+  let downX=0, downY=0, downTarget=null;
+  const dist=()=>{ const p=[...pointers.values()]; return Math.hypot(p[0].x-p[1].x, p[0].y-p[1].y); };
+  stage.addEventListener("wheel", e=>{ e.preventDefault(); lbSetScale(lbz.scale*(e.deltaY<0?1.15:1/1.15)); }, {passive:false});
+  stage.addEventListener("dragstart", e=>e.preventDefault());
+  stage.addEventListener("pointerdown", e=>{
+    stage.setPointerCapture(e.pointerId);
+    pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    downX=e.clientX; downY=e.clientY; downTarget=e.target;
+    lbz.sx=e.clientX; lbz.sy=e.clientY; lbz.px=lbz.tx; lbz.py=lbz.ty;
+    if(pointers.size===2){ lbz.pinchStart=dist(); lbz.scaleStart=lbz.scale; lbz.dragging=false; }
+    else { lbz.dragging=lbz.scale>1; if(lbz.dragging) stage.classList.add("panning"); }
+  });
+  stage.addEventListener("pointermove", e=>{
+    if(!pointers.has(e.pointerId)) return;
+    pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(pointers.size>=2 && lbz.pinchStart){ lbSetScale(lbz.scaleStart*dist()/lbz.pinchStart); return; }
+    if(lbz.dragging){ lbz.tx=lbz.px+(e.clientX-lbz.sx); lbz.ty=lbz.py+(e.clientY-lbz.sy); lbClampPan(); lbApplyZoom(); }
+  });
+  const up=e=>{
+    const wasMulti=pointers.size>=2;
+    pointers.delete(e.pointerId);
+    if(pointers.size<2) lbz.pinchStart=0;
+    if(pointers.size===0){
+      const clickish=(Math.abs(e.clientX-downX)+Math.abs(e.clientY-downY))<6 && !wasMulti;
+      if(clickish){
+        if(downTarget && downTarget.classList.contains("lb-img")) lbSetScale(lbz.scale>1?1:2.5);
+        else if(downTarget && downTarget.classList.contains("lb-stage")) closeLightbox();
+      }
+      lbz.dragging=false; stage.classList.remove("panning");
+    }
+  };
+  stage.addEventListener("pointerup", up);
+  stage.addEventListener("pointercancel", e=>{ pointers.delete(e.pointerId); if(pointers.size<2) lbz.pinchStart=0; if(pointers.size===0){ lbz.dragging=false; stage.classList.remove("panning"); } });
+}
+
 function togglePalette(){ if(state.palette){state.palette=null;render();return;} if(!state.current||!state.currentUrl)return; const img=new Image(); img.onload=()=>{state.palette=extractPalette(img);render();}; img.src=state.currentUrl; }
 
 // inputs
@@ -957,6 +1184,15 @@ const filesInput=el(`<input type="file" accept="image/*" multiple style="display
 filesInput.onchange=e=>{ addImages(e.target.files); filesInput.value=""; }; document.body.append(filesInput);
 
 window.addEventListener("keydown", e=>{
+  if (state.lightbox.open){
+    if(e.key==="Escape"){ e.preventDefault(); closeLightbox(); }
+    else if(e.key==="ArrowRight"){ e.preventDefault(); lbNav(1); }
+    else if(e.key==="ArrowLeft"){ e.preventDefault(); lbNav(-1); }
+    else if(e.key==="+"||e.key==="="){ e.preventDefault(); lbSetScale(lbz.scale*1.4); }
+    else if(e.key==="-"||e.key==="_"){ e.preventDefault(); lbSetScale(lbz.scale/1.4); }
+    else if(e.key==="0"){ e.preventDefault(); lbSetScale(1); }
+    return;
+  }
   if (!state.items.length) return;
   const t=document.activeElement.tagName; if(t==="INPUT"||t==="SELECT"||t==="TEXTAREA")return;
   switch(e.code){
