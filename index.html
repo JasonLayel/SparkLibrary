@@ -166,6 +166,14 @@
 
   .fc{cursor:zoom-in;}
   .fc .x{z-index:2;}
+  .fc.cull{cursor:pointer;}
+  .fc.cull.marked{border-color:var(--mag);box-shadow:0 0 12px rgba(255,45,149,.35);}
+  .fc.cull.marked img{opacity:.3;filter:grayscale(1);}
+  .fc.cull.marked::after{content:"HIDE";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-size:12px;letter-spacing:1.5px;color:var(--mag);text-shadow:0 0 10px var(--glowm);}
+  .srow{display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap;margin:2px 0 14px;}
+  .srow .seg{margin:0;}
+  .tsel.on{color:var(--gold);border-color:var(--gold);box-shadow:0 0 14px rgba(38,231,255,.28);}
   .fhint{color:var(--muted);font-size:11px;font-family:var(--mono);letter-spacing:.3px;margin-top:10px;}
 
   /* lightbox — zoom viewer for favorites & grids */
@@ -224,8 +232,12 @@ const IMG_RE = /\.(jpe?g|png|webp|gif|avif|bmp|heic|heif)$/i;
 const NO_SUB = "(no subfolder)";
 const HAS_FS = !!window.showDirectoryPicker;   // desktop Chrome/Edge
 const IS_MOBILE = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);   // real phone/tablet vs a desktop browser lacking the picker API
-const LS = { favs:"sparkst_favs", off:"sparkst_off", tags:"sparkst_tags", ds:"sparkst_ds", trig:"sparkst_trigger", drawn:"sparkst_drawnimgs", hidden:"sparkst_hidden", synced:"sparkst_synced" };
+const LS = { favs:"sparkst_favs", off:"sparkst_off", tags:"sparkst_tags", ds:"sparkst_ds", trig:"sparkst_trigger", drawn:"sparkst_drawnimgs", hidden:"sparkst_hidden", synced:"sparkst_synced", skips:"sparkst_skips", reviewed:"sparkst_reviewed", tagsrc:"sparkst_tagsrc" };
 const DRAWN_MS = 30000;   // free-browsing dwell that counts as "drew it" (gesture completion always counts)
+const SKIP_MS = 3000;     // moving on within this long after an image appears counts as a skip
+const ENGAGE_MS = 10000;  // staying this long clears an image's skip count
+const SKIP_DEMOTE = 3;    // skipped this many times: shown last, and listed under "Often skipped"
+const CULL_PAGE = 24;     // thumbnails per page in the Cull panel
 const MIN_DIM = 400;      // images smaller than this in either dimension are filtered out of rotation. Change this number to adjust.
 const GESTURE_PRESETS = {
   warmup: { label:"Warm-up (30s·60s·2m)", steps:[[30,5],[60,3],[120,2]] },
@@ -248,6 +260,10 @@ const state = {
   ds: new Set(JSON.parse(localStorage.getItem(LS.ds)||"[]")),
   drawnImgs: new Set(JSON.parse(localStorage.getItem(LS.drawn)||"[]")),
   hidden: new Set(JSON.parse(localStorage.getItem(LS.hidden)||"[]")),
+  skips: JSON.parse(localStorage.getItem(LS.skips)||"{}"),           // path -> quick-skip count
+  reviewed: new Set(JSON.parse(localStorage.getItem(LS.reviewed)||"[]")),  // passed through the Cull panel
+  tagSrc: localStorage.getItem(LS.tagsrc)||"",
+  skippedOpen:false, cullOpen:false, cullMarked:new Set(), dupCount:0, visibleAt:0,
   tooSmall: new Set(),                                   // session-only: images found under MIN_DIM on load
   trigger: localStorage.getItem(LS.trig)||"",
   source: "boards", current: null, drawn: 0, shownAt: 0,
@@ -279,6 +295,8 @@ function markDrawn(path){ if(path && !state.drawnImgs.has(path)){ state.drawnImg
 function toggleDrawn(path){ if(!path) return; if(state.drawnImgs.has(path)) state.drawnImgs.delete(path); else state.drawnImgs.add(path); saveDrawn(); }
 function hideImage(path){ if(!path) return; state.hidden.add(path); saveHidden(); }
 function unhide(path){ state.hidden.delete(path); saveHidden(); }
+const saveSkips=()=>{ localStorage.setItem(LS.skips, JSON.stringify(state.skips)); scheduleMetaSave(); };
+const saveReviewed=()=>{ localStorage.setItem(LS.reviewed, JSON.stringify([...state.reviewed])); scheduleMetaSave(); };
 
 // ---- IndexedDB: 'handles' for desktop folder handle, 'lib' for phone image cache ----
 function idb(mode, store, fn){
@@ -320,10 +338,37 @@ async function ensureUrl(it){
   return u;
 }
 function clearUrls(){ urlCache.forEach(u => URL.revokeObjectURL(u)); urlCache.clear(); }
+// Byte-identical files (same Drive md5) show once. Keep the copy that already carries your
+// work (favorite > dataset > hidden > tagged/drawn) so nothing you marked disappears.
+function dedupeItems(items){
+  const groups=new Map(), keep=[]; let dups=0;
+  for(const it of items){ if(!it.md5){ keep.push(it); continue; } const g=groups.get(it.md5); if(g) g.push(it); else groups.set(it.md5,[it]); }
+  const score=i=>(state.favs.has(i.path)?8:0)+(state.ds.has(i.path)?4:0)+(state.hidden.has(i.path)?2:0)+((state.tags[i.path]||state.drawnImgs.has(i.path))?1:0);
+  for(const g of groups.values()){ let best=g[0]; for(const i of g) if(score(i)>score(best)) best=i; keep.push(best); dups+=g.length-1; }
+  return { items:keep, dups };
+}
+// Board = the image's folder path. Label = its last folder name, plus parents only where needed to tell boards apart.
+let boardLabelMap = new Map();
+function buildBoardLabels(){
+  boardLabelMap = new Map();
+  const names=[...new Set(state.items.map(i=>i.board))].filter(n=>n!==NO_SUB);
+  const lab=(n,k)=>n.split("/").slice(-k).join(" › ");
+  const k=new Map(names.map(n=>[n,1]));
+  for(let pass=0;pass<8;pass++){
+    const seen=new Map();
+    names.forEach(n=>{ const l=lab(n,k.get(n)); seen.set(l,(seen.get(l)||0)+1); });
+    let changed=false;
+    names.forEach(n=>{ if(seen.get(lab(n,k.get(n)))>1 && k.get(n)<n.split("/").length){ k.set(n,k.get(n)+1); changed=true; } });
+    if(!changed) break;
+  }
+  names.forEach(n=>boardLabelMap.set(n, lab(n,k.get(n))));
+}
+const boardLabel=(n)=> n===NO_SUB ? n : (boardLabelMap.get(n)||n);
 function finishLoad(arr){
   clearUrls();
   arr.sort((a,b)=> a.path.localeCompare(b.path));
   state.items = arr; bag = []; state.current = null; state.palette = null; state.tooSmall = new Set();
+  buildBoardLabels();
   render(); showImage();
 }
 
@@ -336,7 +381,7 @@ function loadFromFileList(fileList){
     const parts = rel.split("/");
     const path = parts.length > 1 ? parts.slice(1).join("/") : parts[0];
     const p2 = path.split("/");
-    arr.push({ path, board: p2.length>1 ? p2[0] : NO_SUB, name: clean(file.name), file });
+    arr.push({ path, board: p2.length>1 ? p2.slice(0,-1).join("/") : NO_SUB, name: clean(file.name), file });
   }
   state.activeSource = "folder";
   finishLoad(arr);
@@ -348,7 +393,7 @@ async function walkDir(dirHandle, prefix, out){
       if (IMG_RE.test(name)){
         const file = await handle.getFile();
         const parts = path.split("/");
-        out.push({ path, board: parts.length>1 ? parts[0] : NO_SUB, name: clean(name), file });
+        out.push({ path, board: parts.length>1 ? parts.slice(0,-1).join("/") : NO_SUB, name: clean(name), file });
       }
     } else if (handle.kind === "directory") await walkDir(handle, path, out);
   }
@@ -411,16 +456,16 @@ async function driveList(rootId){
     let pageToken = null;
     do{
       const q = encodeURIComponent(`'${folderId}' in parents and trashed=false`);
-      const url = `https://www.googleapis.com/drive/v3/files?q=${q}&fields=nextPageToken,files(id,name,mimeType,imageMediaMetadata(width,height))&pageSize=1000&supportsAllDrives=true&includeItemsFromAllDrives=true` + (pageToken?`&pageToken=${pageToken}`:"");
+      const url = `https://www.googleapis.com/drive/v3/files?q=${q}&fields=nextPageToken,files(id,name,mimeType,md5Checksum,imageMediaMetadata(width,height))&pageSize=1000&supportsAllDrives=true&includeItemsFromAllDrives=true` + (pageToken?`&pageToken=${pageToken}`:"");
       const r = await fetch(url, { headers:{ Authorization:"Bearer "+t } });
       if(!r.ok) throw new Error("Drive list "+r.status);
       const data = await r.json();
       for(const f of (data.files||[])){
-        if(f.mimeType === "application/vnd.google-apps.folder"){ await listChildren(f.id, boardName || f.name); continue; }
+        if(f.mimeType === "application/vnd.google-apps.folder"){ await listChildren(f.id, boardName ? boardName+"/"+f.name : f.name); continue; }
         if(!IMG_RE.test(f.name)) continue;
         const md = f.imageMediaMetadata;   // Drive tells us pixel size without downloading — skip tiny ones upfront
         if(md && md.width && md.height && (md.width < MIN_DIM || md.height < MIN_DIM)) continue;
-        out.push({ path:"gd:"+f.id, driveId:f.id, name:clean(f.name), board: boardName || NO_SUB });
+        out.push({ path:"gd:"+f.id, driveId:f.id, md5:f.md5Checksum, name:clean(f.name), board: boardName || NO_SUB });
       }
       pageToken = data.nextPageToken;
     } while(pageToken);
@@ -435,7 +480,9 @@ async function loadDrive(){
     state.gdBusy=false;
     if(!items.length){ state.gdMsg="Connected, but no images were found in that folder."; render(); return; }
     state.activeSource="drive";
-    finishLoad(items);
+    const { items:uniq, dups } = dedupeItems(items);
+    state.dupCount = dups;
+    finishLoad(uniq);
     driveMetaLoad();
   }catch(e){ state.gdBusy=false; state.gdMsg="Couldn't read the folder: "+(e.message||e); render(); }
 }
@@ -474,7 +521,7 @@ async function driveMetaSave(){
   if(state.activeSource!=="drive") return;
   const t = await getToken(false);
   const savedAt = Date.now();
-  const payload = JSON.stringify({ v:2, tags:state.tags, favs:[...state.favs], ds:[...state.ds], drawnImgs:[...state.drawnImgs], hidden:[...state.hidden], trigger:state.trigger, savedAt });
+  const payload = JSON.stringify({ v:2, tags:state.tags, favs:[...state.favs], ds:[...state.ds], drawnImgs:[...state.drawnImgs], hidden:[...state.hidden], skips:state.skips, reviewed:[...state.reviewed], trigger:state.trigger, savedAt });
   localStorage.setItem(LS.synced, String(savedAt));   // our own write is the newest we've seen
   if(!state.metaId){
     const boundary = "spark"+Date.now();
@@ -491,6 +538,8 @@ function persistMetaLocal(){
   localStorage.setItem(LS.ds, JSON.stringify([...state.ds]));
   localStorage.setItem(LS.drawn, JSON.stringify([...state.drawnImgs]));
   localStorage.setItem(LS.hidden, JSON.stringify([...state.hidden]));
+  localStorage.setItem(LS.skips, JSON.stringify(state.skips));
+  localStorage.setItem(LS.reviewed, JSON.stringify([...state.reviewed]));
   localStorage.setItem(LS.tags, JSON.stringify(state.tags));
   localStorage.setItem(LS.trig, state.trigger);
 }
@@ -512,6 +561,8 @@ async function driveMetaLoad(){
       (d.ds||[]).forEach(x=>state.ds.add(x));
       (d.drawnImgs||[]).forEach(x=>state.drawnImgs.add(x));
       (d.hidden||[]).forEach(x=>state.hidden.add(x));
+      (d.reviewed||[]).forEach(x=>state.reviewed.add(x));
+      for(const [k,v] of Object.entries(d.skips||{})) state.skips[k]=Math.max(state.skips[k]||0, v||0);
       for(const [k,v] of Object.entries(d.tags||{})){ const cur=new Set(state.tags[k]||[]); (v||[]).forEach(tag=>cur.add(tag)); state.tags[k]=[...cur]; }
       if(d.trigger && !state.trigger) state.trigger=d.trigger;
       persistMetaLocal(); render();
@@ -524,6 +575,8 @@ async function driveMetaLoad(){
       state.ds = new Set(d.ds||[]);
       state.drawnImgs = new Set(d.drawnImgs||[]);
       state.hidden = new Set(d.hidden||[]);
+      if(d.skips) state.skips = d.skips;                       // older clients don't write these — keep ours
+      if(d.reviewed) state.reviewed = new Set(d.reviewed);
       if(typeof d.trigger === "string") state.trigger = d.trigger;
       persistMetaLocal();
       localStorage.setItem(LS.synced, String(remoteAt));
@@ -540,6 +593,7 @@ function visible(i){ return !state.hidden.has(i.path) && !state.tooSmall.has(i.p
 function pool(){
   if (state.source === "favorites") return state.items.filter(i => state.favs.has(i.path) && visible(i));
   if (state.source === "dataset")   return state.items.filter(i => state.ds.has(i.path) && visible(i));
+  if (state.source === "tag")       return state.items.filter(i => (state.tags[i.path]||[]).includes(state.tagSrc) && visible(i));
   if (state.source === "undrawn")   return state.items.filter(i => !state.drawnImgs.has(i.path) && !state.boardsOff.has(i.board) && visible(i));
   return state.items.filter(i => !state.boardsOff.has(i.board) && visible(i));
 }
@@ -552,14 +606,15 @@ function showImage(){
     let paths = p.map(i=>i.path).filter(x => !(state.current && x===state.current.path));
     if (!paths.length) paths = p.map(i=>i.path);
     // Prefer images you haven't drawn yet — fresh references surface before repeats.
-    const undrawn=[], drawn=[];
-    for (const x of paths) (state.drawnImgs.has(x)?drawn:undrawn).push(x);
-    bag = shuffle(undrawn).concat(shuffle(drawn));
+    // Often-skipped images go last.
+    const undrawn=[], drawn=[], demoted=[];
+    for (const x of paths){ if((state.skips[x]||0)>=SKIP_DEMOTE) demoted.push(x); else (state.drawnImgs.has(x)?drawn:undrawn).push(x); }
+    bag = shuffle(undrawn).concat(shuffle(drawn), shuffle(demoted));
   }
   const path = bag.shift();
   state.current = p.find(i=>i.path===path) || p[0];
   state.drawn++; state.shownAt = Date.now();
-  state.palette = null; state.currentUrl = null; state.loadErr = false;
+  state.palette = null; state.currentUrl = null; state.loadErr = false; state.visibleAt = 0;
   render();
   const cur = state.current;
   ensureUrl(cur).then(u=>{
@@ -574,15 +629,23 @@ function showImage(){
         showImage();                  // advance past it
         return;
       }
-      state.currentUrl = u; render();
+      state.currentUrl = u; state.visibleAt = Date.now(); render();
     };
     probe.onerror = ()=>{ if(state.current===cur){ state.loadErr=true; render(); } };
     probe.src = u;
   }).catch(()=>{ if(state.current===cur){ state.loadErr=true; render(); } });
 }
 // User action ("Show me another" / space / tap image).
+// Called as you move off the current image: a quick exit counts as a skip; a long look clears the count.
+function noteOutgoing(limit){
+  const cur=state.current; if(!cur || !state.visibleAt) return;
+  const dwell=Date.now()-state.visibleAt;
+  if(dwell < limit){ state.skips[cur.path]=(state.skips[cur.path]||0)+1; saveSkips(); }
+  else if(dwell >= ENGAGE_MS && state.skips[cur.path]){ delete state.skips[cur.path]; saveSkips(); }
+}
 function draw(){
   if (state.gesture.on){
+    noteOutgoing(ENGAGE_MS);   // an explicit "skip this pose" counts unless you'd been on it a while
     // During a gesture this is a SKIP: swap the reference, restart this interval's clock, don't count it as drawn.
     showImage();
     state.timerLeft = state.timerDur; updateTimerBar();
@@ -590,6 +653,7 @@ function draw(){
   }
   // Free browsing: if you stayed with the outgoing image long enough, it counts as drawn.
   if (state.current && state.shownAt && (Date.now()-state.shownAt) >= DRAWN_MS) markDrawn(state.current.path);
+  noteOutgoing(SKIP_MS);
   showImage();
   if (state.timerOn) state.timerLeft = state.timerDur;
 }
@@ -836,7 +900,7 @@ function render(){
     head.onclick=()=>{state.panelOpen=!state.panelOpen;render();}; panel.append(head);
     if (state.panelOpen){
       const body=el(`<div class="pb"></div>`); const chips=el(`<div class="chips"></div>`);
-      bs.forEach(b=>{ const c=el(`<button class="bchip ${state.boardsOff.has(b.name)?"":"sel"}">${esc(b.name)}<span class="n">${b.count}</span></button>`);
+      bs.forEach(b=>{ const c=el(`<button class="bchip ${state.boardsOff.has(b.name)?"":"sel"}" title="${esc(b.name)}">${esc(boardLabel(b.name))}<span class="n">${b.count}</span></button>`);
         c.onclick=()=>{ if(state.boardsOff.has(b.name))state.boardsOff.delete(b.name); else state.boardsOff.add(b.name); saveOff(); resetDeck(); render(); }; chips.append(c); });
       body.append(chips);
       const act=el(`<div class="pactions"></div>`);
@@ -846,6 +910,8 @@ function render(){
     }
     app.append(panel);
   }
+
+  app.append(cullPanel());
 
   app.append(gridPanel("Favorites", state.items.filter(i=>state.favs.has(i.path)), "favOpen",
     (f)=>{ state.favs.delete(f.path); saveFavs(); if(state.source==="favorites")resetDeck(); render(); },
@@ -874,13 +940,28 @@ function render(){
       "Nothing hidden.", "hidden"));
   }
 
+  const skList = skippedList();
+  if (skList.length){
+    const skp = gridPanel("Often skipped", skList, "skippedOpen",
+      (f)=>{ delete state.skips[f.path]; saveSkips(); render(); }, "", "skipped");
+    if (state.skippedOpen){
+      const row=el(`<div class="pactions"></div>`);
+      const all=el(`<button class="primary">Never show all ${skList.length}</button>`);
+      all.onclick=()=>{ skList.forEach(i=>state.hidden.add(i.path)); saveHidden(); bag=[]; render(); };
+      row.append(all, el(`<span class="tiny">You skipped these ${SKIP_DEMOTE}+ times within ${SKIP_MS/1000}s, so they already come up last. × keeps an image and resets its count.</span>`));
+      skp.querySelector(".pb").append(row);
+    }
+    app.append(skp);
+  }
+
   const undrawnCount = state.items.filter(i=>!state.drawnImgs.has(i.path) && !state.boardsOff.has(i.board) && !state.hidden.has(i.path)).length;
   const seg=el(`<div class="seg">
     <button class="${state.source==="boards"?"on":""}" data-s="boards">All</button>
     <button class="${state.source==="favorites"?"on":""}" data-s="favorites">Favorites</button>
     <button class="${state.source==="dataset"?"on":""}" data-s="dataset">Dataset</button>
     <button class="${state.source==="undrawn"?"on":""}" data-s="undrawn">Undrawn ${undrawnCount?`<span style="color:var(--mag)">${undrawnCount}</span>`:""}</button></div>`);
-  seg.querySelectorAll("button").forEach(b=>b.onclick=()=>{state.source=b.dataset.s;resetDeck();}); app.append(seg);
+  seg.querySelectorAll("button").forEach(b=>b.onclick=()=>{state.source=b.dataset.s;resetDeck();});
+  const srow=el(`<div class="srow"></div>`); srow.append(seg, tagSelect()); app.append(srow);
 
   const st=el(`<div class="studio"></div>`);
   st.append(toggleBtn("Flip","flip","F")); st.append(toggleBtn("Gray","gray","G"));
@@ -921,6 +1002,7 @@ function render(){
   if (!p.length){
     const msg = state.source==="favorites" ? "No favorites yet — save a few first."
       : state.source==="dataset" ? "Dataset is empty — add images with ＋ Dataset."
+      : state.source==="tag" ? `Nothing is tagged “${esc(state.tagSrc)}” yet — add the tag under an image.`
       : "No boards selected. Pick at least one above.";
     frame.append(el(`<div class="plc">${msg}</div>`));
   } else if (state.current && !state.currentUrl){
@@ -952,7 +1034,7 @@ function render(){
     const meta=el(`<div class="meta"></div>`);
     if (state.current.name) meta.append(el(`<div class="pt">${esc(state.current.name)}</div>`));
     const row=el(`<div class="row"></div>`);
-    if (state.current.board && state.current.board!==NO_SUB) row.append(el(`<span class="chip board">${esc(state.current.board)}</span>`));
+    if (state.current.board && state.current.board!==NO_SUB) row.append(el(`<span class="chip board" title="${esc(state.current.board)}">${esc(boardLabel(state.current.board))}</span>`));
     row.append(el(`<a class="chip" href="${urlFor(state.current.path)}" target="_blank" rel="noreferrer">Open full size ↗</a>`));
     const dl=el(`<button class="chip">⤓ Download</button>`); dl.onclick=downloadCurrent; row.append(dl);
     const fav=el(`<button class="favb ${state.favs.has(state.current.path)?"saved":""}">${state.favs.has(state.current.path)?"♥ Saved":"♡ Save"}</button>`);
@@ -974,8 +1056,9 @@ function render(){
   if (p.length){
     const ctr=el(`<div class="ctr"></div>`);
     const d=el(`<button class="draw">${state.gesture.on?"Skip this pose":"Show me another"}</button>`); d.onclick=draw; ctr.append(d);
-    const srcLabel = state.source==="favorites"?"favorites":state.source==="dataset"?"dataset images":state.source==="undrawn"?"undrawn":"images";
-    ctr.append(el(`<div class="count"><b>${p.length.toLocaleString()}</b> ${srcLabel} · shown ${state.drawn} · <b style="color:var(--mag)">${state.drawnImgs.size.toLocaleString()}</b> drawn</div>`));
+    const srcLabel = state.source==="favorites"?"favorites":state.source==="dataset"?"dataset images":state.source==="undrawn"?"undrawn":state.source==="tag"?`tagged “${esc(state.tagSrc)}”`:"images";
+    const dupNote = state.dupCount ? ` · ${state.dupCount.toLocaleString()} duplicate file${state.dupCount===1?"":"s"} ignored` : "";
+    ctr.append(el(`<div class="count"><b>${p.length.toLocaleString()}</b> ${srcLabel} · shown ${state.drawn} · <b style="color:var(--mag)">${state.drawnImgs.size.toLocaleString()}</b> drawn${dupNote}</div>`));
     ctr.append(el(`<div class="hint">${HAS_FS?"space next · F flip · G gray · V notan · B squint · R grid · P palette · D dataset · S save · H hide":"tap image for the next one"}</div>`));
     app.append(ctr);
   }
@@ -984,7 +1067,7 @@ function render(){
 function toggleBtn(label,key,kbd){ const b=el(`<button class="tb ${state[key]?"on":""}">${label}<kbd>${kbd}</kbd></button>`); b.onclick=()=>{state[key]=!state[key];render();}; return b; }
 function gridPanel(title,list,openKey,onRemove,emptyMsg,kind){
   const panel=el(`<div class="panel"></div>`);
-  const noun = title==="LoRA dataset"?"images":title==="Never show"?"hidden":"saved";
+  const noun = title==="LoRA dataset"||title==="Often skipped"?"images":title==="Never show"?"hidden":"saved";
   const head=el(`<div class="ph"><h3>${title}</h3><span class="m">${list.length} ${noun} ${state[openKey]?"▾":"▸"}</span></div>`);
   head.onclick=()=>{state[openKey]=!state[openKey];render();}; panel.append(head);
   if (state[openKey]){
@@ -1000,11 +1083,75 @@ function gridPanel(title,list,openKey,onRemove,emptyMsg,kind){
   }
   return panel;
 }
+// ---------- library tools: often skipped, cull, draw by tag ----------
+function skippedList(){
+  return state.items.filter(i=>(state.skips[i.path]||0)>=SKIP_DEMOTE && visible(i))
+    .sort((a,b)=>(state.skips[b.path]-state.skips[a.path]) || a.path.localeCompare(b.path));
+}
+function dropUrl(path){   // free a full-size image we only needed for a thumbnail
+  const u=urlCache.get(path);
+  if(u && !(state.current && state.current.path===path)){ URL.revokeObjectURL(u); urlCache.delete(path); }
+}
+// Review the library a page at a time: click the duds, hide them, keep the rest. Respects board selection.
+function cullPanel(){
+  const all=state.items.filter(i=>!state.boardsOff.has(i.board) && visible(i));
+  const done=all.filter(i=>state.reviewed.has(i.path)).length;
+  const panel=el(`<div class="panel"></div>`);
+  const head=el(`<div class="ph"><h3>Cull duds</h3><span class="m">${done.toLocaleString()} / ${all.length.toLocaleString()} reviewed ${state.cullOpen?"▾":"▸"}</span></div>`);
+  head.onclick=()=>{ state.cullOpen=!state.cullOpen; render(); }; panel.append(head);
+  if(!state.cullOpen) return panel;
+  const body=el(`<div class="pb"></div>`);
+  const page=all.filter(i=>!state.reviewed.has(i.path))
+    .sort((a,b)=>((state.skips[b.path]||0)-(state.skips[a.path]||0)) || a.path.localeCompare(b.path))
+    .slice(0,CULL_PAGE);
+  if(!page.length) body.append(el(`<div class="fe">Everything in the selected boards has been reviewed.</div>`));
+  else{
+    body.append(el(`<div class="tiny" style="margin-bottom:10px">Click the duds, then press the button: marked images go to Never show, the rest are kept and won't come back here. Most-skipped images come first; turn boards off above to cull one board at a time.</div>`));
+    const go=el(`<button class="primary"></button>`);
+    const label=()=>{ const n=page.filter(f=>state.cullMarked.has(f.path)).length; go.textContent = n ? `Hide ${n} · keep ${page.length-n} · next page` : `Keep all ${page.length} · next page`; };
+    const grid=el(`<div class="fg"></div>`);
+    page.forEach(f=>{
+      const cell=el(`<div class="fc cull ${state.cullMarked.has(f.path)?"marked":""}" title="${esc(f.name)}"><img alt="${esc(f.name)}" loading="lazy"></div>`);
+      const im=cell.querySelector("img"); const c=urlFor(f.path); if(c) im.src=c; else ensureUrl(f).then(u=>{ im.src=u; }).catch(()=>{});
+      cell.onclick=()=>{ state.cullMarked.has(f.path)?state.cullMarked.delete(f.path):state.cullMarked.add(f.path); cell.classList.toggle("marked"); label(); };
+      grid.append(cell);
+    });
+    body.append(grid);
+    go.onclick=()=>{
+      page.forEach(f=>{ if(state.cullMarked.has(f.path)) state.hidden.add(f.path); else state.reviewed.add(f.path); state.cullMarked.delete(f.path); dropUrl(f.path); });
+      saveHidden(); saveReviewed(); bag=[]; render();
+    };
+    label();
+    const row=el(`<div class="pactions"></div>`); row.append(go);
+    if(done){ const reset=el(`<button class="ghost">Start over</button>`); reset.onclick=()=>{ if(confirm("Clear your cull progress and review everything again? Hidden images stay hidden.")){ state.reviewed.clear(); saveReviewed(); render(); } }; row.append(reset); }
+    body.append(row);
+  }
+  panel.append(body);
+  return panel;
+}
+function tagSelect(){
+  const counts=new Map();
+  state.items.forEach(i=>{ if(visible(i)) (state.tags[i.path]||[]).forEach(t=>counts.set(t,(counts.get(t)||0)+1)); });
+  const tags=[...counts.entries()].sort((a,b)=>a[0].localeCompare(b[0]));
+  const on=state.source==="tag";
+  const sel=el(`<select class="tsel ${on?"on":""}" title="Draw only images with this tag"></select>`);
+  if(!tags.length){ sel.append(el(`<option>Draw by tag — none yet</option>`)); sel.disabled=true; return sel; }
+  sel.append(el(`<option value="">Draw by tag…</option>`));
+  tags.forEach(([t,n])=>{ const o=el(`<option></option>`); o.value=t; o.textContent=`${t} (${n})`; sel.append(o); });
+  sel.value = on ? state.tagSrc : "";
+  sel.onchange=()=>{
+    if(!sel.value){ state.source="boards"; resetDeck(); return; }
+    state.tagSrc=sel.value; localStorage.setItem(LS.tagsrc, state.tagSrc); state.source="tag"; resetDeck();
+  };
+  return sel;
+}
+
 // ---------- lightbox (zoom viewer for favorites & grids) ----------
 function lbList(kind){
   if(kind==="favorites") return state.items.filter(i=>state.favs.has(i.path));
   if(kind==="dataset")   return state.items.filter(i=>state.ds.has(i.path));
   if(kind==="hidden")    return state.items.filter(i=>state.hidden.has(i.path));
+  if(kind==="skipped")   return skippedList();
   return [];
 }
 function lbCurrent(){ return lbList(state.lightbox.kind)[state.lightbox.index] || null; }
@@ -1126,7 +1273,7 @@ function paintLightbox(){
   }
   lbPaintTools(); lbPaintPalette();
   const board=ov.querySelector(".lb-board");
-  if(it.board && it.board!==NO_SUB){ board.textContent=it.board; board.style.display=""; } else board.style.display="none";
+  if(it.board && it.board!==NO_SUB){ board.textContent=boardLabel(it.board); board.style.display=""; } else board.style.display="none";
   const open=ov.querySelector(".lb-open");
   const u=state.lightbox.url||urlFor(it.path);
   if(u){ open.href=u; open.style.display=""; } else open.style.display="none";
@@ -1197,7 +1344,7 @@ function lbLoadOnStage(){
   state.current=it; state.currentUrl=null; state.loadErr=false; state.palette=null; bag=[];
   closeLightbox();
   const cur=it;
-  ensureUrl(it).then(u=>{ if(state.current===cur){ state.currentUrl=u; render(); const fr=$(".frame"); if(fr) fr.scrollIntoView({behavior:"smooth",block:"center"}); } })
+  ensureUrl(it).then(u=>{ if(state.current===cur){ state.currentUrl=u; state.visibleAt=Date.now(); render(); const fr=$(".frame"); if(fr) fr.scrollIntoView({behavior:"smooth",block:"center"}); } })
     .catch(()=>{ if(state.current===cur){ state.loadErr=true; render(); } });
 }
 function lbWireZoom(stage){
