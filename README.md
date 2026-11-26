@@ -31,28 +31,30 @@ and the access token lives only in memory.
 
 ## Updating from Pinterest and ArtStation (Windows)
 
-Spark only reads your Drive folder, so new saves get there with
-[gallery-dl](https://codeberg.org/mikf/gallery-dl), run by `tools/update-spark.bat`:
+`tools/update-spark.bat` pulls new saves into the Spark folder with
+[gallery-dl](https://codeberg.org/mikf/gallery-dl). It's a one-line Windows launcher
+followed by a Python script, so double-clicking it is all you do.
 
-1. Install [Google Drive for desktop](https://www.google.com/drive/download/) so the
-   Spark folder is a normal folder on your PC, and
-   [Python](https://www.python.org/downloads/) (tick "Add python.exe to PATH").
-2. In Spark, click **⤓ Get updater** at the top right (or go to
+- Each Pinterest board downloads straight into its Spark folder: Digital Painting →
+  `Environments`, Sketching → `Character-Sketch`, Character Design & Fashion →
+  `Character-Render`. Reference and Sculpture pins go to `_To sort`, to be filed into
+  `Photo-Figure` or `Photo-Portrait` by hand. Other boards are left alone. The mapping
+  is the `BOARDS` list at the top of the script.
+- ArtStation likes go to `ArtStation Likes`.
+- Images you already have are skipped wherever they're filed, by the Pinterest pin ID
+  (`pinterest_<id>…`) or image hash in their file name. Everything it has seen is
+  remembered in `%LOCALAPPDATA%\SparkStudio`, so a file you delete doesn't come back.
+
+To run it:
+
+1. Install [Python](https://www.python.org/downloads/) (tick "Add python.exe to PATH").
+2. In Spark, click **⤓ Get updater** (or open
    https://sparkjl.netlify.app/tools/update-spark.bat). If the browser or Windows warns
    about the file, choose **Keep** / **More info → Run anyway**.
-3. Make sure you're logged in to Pinterest in Firefox. The script borrows those
-   cookies so it can see secret boards.
-4. Double-click `update-spark.bat`. The first time, it opens a folder picker: choose
-   your Spark folder (the Drive folder Spark is connected to). It remembers that, and
-   on later runs you can press **C** to pick a different one. It then downloads each
-   Pinterest board to `pinterest\JasonLayel\<board>\` and your ArtStation likes to
-   `artstation\jasonlayel\Likes\`.
-5. When Drive finishes syncing, press **Refresh** in Spark.
-
-Run it again whenever you like. Anything already downloaded is skipped, both by
-gallery-dl's record (`%LOCALAPPDATA%\SparkStudio\gdl-archive.sqlite3`) and because the
-file already exists. If a run ever does bring in a byte-identical copy, Spark shows it
-only once.
+3. Be logged in to Pinterest in Firefox (the script uses those cookies).
+4. Double-click `update-spark.bat`. The first time, pick your Spark folder in the window
+   that opens; later runs remember it (press **C** at the start to change it).
+5. When the folder has synced to Google Drive, press **Refresh** in Spark.
 
 ## Deploying
 
