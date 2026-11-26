@@ -2,3 +2,10 @@
 # Netlify just serves the repo root as-is.
 [build]
   publish = "."
+
+# Make the library updater download as a file instead of opening as text.
+[[headers]]
+  for = "/tools/update-spark.bat"
+  [headers.values]
+    Content-Type = "application/octet-stream"
+    Content-Disposition = "attachment; filename=\"update-spark.bat\""

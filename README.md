@@ -37,11 +37,14 @@ Spark only reads your Drive folder, so new saves get there with
 1. Install [Google Drive for desktop](https://www.google.com/drive/download/) so the
    Spark folder is a normal folder on your PC, and
    [Python](https://www.python.org/downloads/) (tick "Add python.exe to PATH").
-2. Right-click `update-spark.bat` → Edit, and set `SPARK_DIR` to the Spark folder's path
-   (for example `G:\My Drive\Spark`).
+2. In Spark, click **⤓ Get updater** at the top right (or go to
+   https://sparkjl.netlify.app/tools/update-spark.bat). If the browser or Windows warns
+   about the file, choose **Keep** / **More info → Run anyway**.
 3. Make sure you're logged in to Pinterest in Firefox. The script borrows those
    cookies so it can see secret boards.
-4. Double-click the script. It installs/updates gallery-dl, then downloads each
+4. Double-click `update-spark.bat`. The first time, it opens a folder picker: choose
+   your Spark folder (the Drive folder Spark is connected to). It remembers that, and
+   on later runs you can press **C** to pick a different one. It then downloads each
    Pinterest board to `pinterest\JasonLayel\<board>\` and your ArtStation likes to
    `artstation\jasonlayel\Likes\`.
 5. When Drive finishes syncing, press **Refresh** in Spark.

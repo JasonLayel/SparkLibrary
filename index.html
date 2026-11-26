@@ -845,6 +845,10 @@ function render(){
       tools.append(add, clr);
     }
   }
+  if (!IS_MOBILE){
+    const up=el(`<a class="ghost" href="tools/update-spark.bat" download="update-spark.bat" style="text-decoration:none" title="Windows: double-click it to pull your newest Pinterest saves and ArtStation likes into your Drive folder">⤓ Get updater</a>`);
+    tools.append(up);
+  }
 
   const app = $("#app"); app.innerHTML = "";
 
