@@ -47,8 +47,10 @@ FILTER_FILE = os.path.join(DATA_DIR, "gallery-dl-filter.json")
 ARCHIVE_FILE = os.path.join(DATA_DIR, "gdl-archive.sqlite3")
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif", ".bmp", ".heic", ".heif"}
-PIN_ID_RE = re.compile(r"^pinterest_(\d+)", re.IGNORECASE)  # gallery-dl's file names
-HASH_RE = re.compile(r"^[0-9a-f]{32}$", re.IGNORECASE)       # names saved straight from Pinterest
+# A pin ID, alone ("311944711663121720") or as gallery-dl names it ("pinterest_311944711663121720_2"),
+# and Pinterest's 32-character image code. Copy suffixes like " (1)" are allowed.
+PIN_ID_RE = re.compile(r"^(?:pinterest_(\d+)|(\d{9,20}))(?:[ _(-].*)?$", re.IGNORECASE)
+HASH_RE = re.compile(r"^([0-9a-f]{32})(?:[ _(-].*)?$", re.IGNORECASE)
 QUEUE = 6                                                    # gallery-dl -j message type for a board
 
 
@@ -149,8 +151,9 @@ def choose_spark_dir(settings):
 
 
 def scan(folder):
-    """Pin IDs and image hashes found in image file names, plus image counts per top-level folder."""
-    ids, hashes, counts, matched = set(), set(), {}, {}
+    """Pin IDs and image hashes found in image file names, image counts per top-level folder,
+    and a few names that couldn't be matched."""
+    ids, hashes, counts, matched, unmatched = set(), set(), {}, {}, []
     for dirpath, _dirnames, filenames in os.walk(folder):
         rel = os.path.relpath(dirpath, folder)
         top = "" if rel == "." else rel.split(os.sep)[0]
@@ -160,14 +163,17 @@ def scan(folder):
                 continue
             counts[top] = counts.get(top, 0) + 1
             m = PIN_ID_RE.match(stem)
+            h = None if m else HASH_RE.match(stem)
             if m:
-                ids.add(m.group(1))
-            elif HASH_RE.match(stem):
-                hashes.add(stem.lower())
+                ids.add(m.group(1) or m.group(2))
+            elif h:
+                hashes.add(h.group(1).lower())
             else:
+                if len(unmatched) < 200:
+                    unmatched.append((top, fn))
                 continue
             matched[top] = matched.get(top, 0) + 1
-    return ids, hashes, counts, matched
+    return ids, hashes, counts, matched, unmatched
 
 
 def gdl(args, capture=False):
@@ -222,7 +228,7 @@ def main():
         return
 
     known = load_json(KNOWN_FILE, {})
-    ids, hashes, before, matched = scan(spark)
+    ids, hashes, before, matched, unmatched = scan(spark)
     ids |= set(known.get("ids", []))
     hashes |= set(known.get("hashes", []))
 
@@ -235,6 +241,9 @@ def main():
         if total and ok < total * 0.9:
             print(f"The other {total - ok} can't be matched to a pin. Any that are still on your boards may be"
                   f" downloaded again as second copies (Spark hides exact copies, but they take up space).")
+            examples = [os.path.join(t, f) for t, f in unmatched if t.lower() in wanted][:6]
+            if examples:
+                print("Examples: " + ", ".join(examples))
             if not ask_yes("Continue?"):
                 return
 
@@ -265,7 +274,7 @@ def main():
             gdl(["--config", FILTER_FILE, "--cookies-from-browser", BROWSER, "--download-archive", ARCHIVE_FILE,
                  "--sleep-request", "0.5", "-D", target, url])
             if os.path.isdir(target):  # a pin saved to two boards only comes down once
-                new_ids, new_hashes, _, _ = scan(target)
+                new_ids, new_hashes, _, _, _ = scan(target)
                 ids |= new_ids
                 hashes |= new_hashes
 
@@ -273,7 +282,7 @@ def main():
     print(f"\n=== ArtStation likes -> {os.path.basename(target)} ===")
     gdl(["--download-archive", ARCHIVE_FILE, "--sleep-request", "0.5", "-D", target, ARTSTATION_LIKES])
 
-    after_ids, after_hashes, after, _ = scan(spark)
+    after_ids, after_hashes, after, _, _ = scan(spark)
     save_json(KNOWN_FILE, {"ids": sorted(ids | after_ids), "hashes": sorted(hashes | after_hashes)})
     settings["first_run_done"] = True
     save_json(SETTINGS_FILE, settings)
