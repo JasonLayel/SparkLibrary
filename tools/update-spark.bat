@@ -7,9 +7,9 @@ The line above is a tiny Windows launcher; everything below it is Python, run wi
 What it does:
   - Lists your Pinterest boards and downloads new pins from the boards you use,
     straight into the matching Spark folder (see BOARDS below).
-  - Pins from your reference boards go to "_To sort", because only you can say
+  - Pins from Reference & Sculpture go to "_To sort", because only you can say
     whether each one belongs in Photo-Figure or Photo-Portrait.
-  - Downloads new ArtStation likes into "ArtStation Likes".
+  - Downloads new ArtStation likes into "ArtStation Likes" (see ARTSTATION_MODE).
   - Skips every image you already have, wherever you filed it, by recognising the
     Pinterest pin ID or image hash in its file name. Images it downloads are
     remembered, so deleting one later doesn't bring it back.
@@ -23,18 +23,27 @@ import time
 
 PINTEREST_USER = "JasonLayel"
 ARTSTATION_LIKES = "https://www.artstation.com/jasonlayel/likes"
+# "all" = every image of each liked project, "main" = only each project's first image, "off" = skip ArtStation
+ARTSTATION_MODE = "off"
 BROWSER = "firefox"  # the browser you're logged in to Pinterest with: firefox, chrome or edge
 
 TO_SORT = "_To sort"
 ARTSTATION_FOLDER = "ArtStation Likes"
-# Pinterest board -> Spark folder. Board names match ignoring case, punctuation and "&" vs "and".
-# A "loose" rule also catches any board whose name contains that word (e.g. "Figure Reference").
+# Pinterest board -> Spark folder. Board names match ignoring case and punctuation ("&", "/", "and").
+# A rule with "loose": True also catches any board whose name contains that name.
 BOARDS = [
     {"board": "Digital Painting",           "folder": "Environments"},
     {"board": "Sketching",                  "folder": "Character-Sketch"},
-    {"board": "Character Design & Fashion", "folder": "Character-Render"},
-    {"board": "Reference",                  "folder": TO_SORT, "loose": True},
-    {"board": "Sculpture",                  "folder": TO_SORT, "loose": True},
+    {"board": "Character Design / Fashion", "folder": "Character-Render"},
+    {"board": "Reference & Sculpture",      "folder": TO_SORT},
+    # Each in its own folder, to sort later
+    {"board": "Chibi",                      "folder": "Chibi"},
+    {"board": "Pixel",                      "folder": "Pixel"},
+    {"board": "Still Life",                 "folder": "Still Life"},
+    {"board": "Value Study",                "folder": "Value Study"},
+    {"board": "Copic Exercises",            "folder": "Copic Exercises"},
+    {"board": "Watercolor Exercises",       "folder": "Watercolor Exercises"},
+    {"board": "Watercolor",                 "folder": "Watercolor"},
 ]
 # Spark folders whose images came from Pinterest (used to recognise the Spark folder
 # and to check, on the first run, how many existing images can be matched to pins).
@@ -188,13 +197,13 @@ def upgrade_gallery_dl():
 
 
 def list_boards():
-    """[(board name, board URL)] from gallery-dl's board listing (no pins are downloaded)."""
+    """[(board name, board URL, pin count)] from gallery-dl's board listing (no pins are downloaded)."""
     r = gdl(["--cookies-from-browser", BROWSER, "-j", f"https://www.pinterest.com/{PINTEREST_USER}/"], capture=True)
     try:
         messages = json.loads(r.stdout or "[]")
     except ValueError:
         messages = []
-    boards = [((m[2].get("name") or m[1]).strip(), m[1]) for m in messages
+    boards = [((m[2].get("name") or m[1]).strip(), m[1], m[2].get("pin_count")) for m in messages
               if isinstance(m, list) and len(m) >= 3 and m[0] == QUEUE and isinstance(m[2], dict)]
     problem = "; ".join(m[1].get("message", "") for m in messages
                         if isinstance(m, list) and len(m) >= 2 and m[0] == -1 and isinstance(m[1], dict))
@@ -204,6 +213,14 @@ def list_boards():
 def filter_expr(ids, hashes):
     """gallery-dl evaluates this for each file and skips it when False."""
     return f"str(id) not in {set(ids)!r} and str(filename).lower() not in {set(hashes)!r}"
+
+
+def pin_text(pins):
+    return f" ({pins:,} pins)" if isinstance(pins, int) else ""
+
+
+def image_count(folder):
+    return sum(scan(folder)[2].values()) if os.path.isdir(folder) else 0
 
 
 def resolve_folder(spark, name):
@@ -249,7 +266,7 @@ def main():
 
     print("\nReading your Pinterest boards...")
     boards, problem = list_boards()
-    planned, missing = [], []
+    results, missing = [], []
     if not boards:
         print("Couldn't read your Pinterest boards. Make sure you're logged in to Pinterest in "
               f"{BROWSER.title()}, then run this again.")
@@ -257,57 +274,64 @@ def main():
             print("Details: " + problem)
     else:
         plan, skipped = [], []
-        for name, url in boards:
+        for name, url, pins in boards:
             rule = board_rule(name)
             if rule:
-                plan.append((name, url, rule["folder"]))
+                plan.append((name, url, pins, rule["folder"]))
             else:
                 skipped.append(name)
         missing = [rule["board"] for rule in BOARDS
-                   if not rule.get("loose") and not any(board_rule(n) is rule for n, _ in boards)]
+                   if not rule.get("loose") and not any(board_rule(b[0]) is rule for b in boards)]
         print(f"Found {len(boards)} boards.")
-        for name, _url, folder in plan:
-            print(f"  {name} -> {folder}")
+        for name, _url, pins, folder in plan:
+            print(f"  {name}{pin_text(pins)} -> {folder}")
         for name in missing:
             print(f"Note: no board called \"{name}\" was found.")
         if skipped:
             print("Not downloading these boards: " + ", ".join(skipped))
-        for name, url, folder in plan:
+        for name, url, pins, folder in plan:
             target = resolve_folder(spark, folder)
-            if os.path.basename(target) not in planned:
-                planned.append(os.path.basename(target))
             print(f"\n=== Pinterest \"{name}\" -> {os.path.basename(target)} ===")
+            had = image_count(target)
             save_json(FILTER_FILE, {"extractor": {"file-filter": filter_expr(ids, hashes)}})
-            gdl(["--config", FILTER_FILE, "--cookies-from-browser", BROWSER, "--download-archive", ARCHIVE_FILE,
-                 "--sleep-request", "0.5", "-D", target, url])
+            rc = gdl(["--config", FILTER_FILE, "--cookies-from-browser", BROWSER, "--download-archive", ARCHIVE_FILE,
+                      "--sleep-request", "0.5", "-D", target, url]).returncode
+            results.append((name, pins, os.path.basename(target), image_count(target) - had, rc))
             if os.path.isdir(target):  # a pin saved to two boards only comes down once
                 new_ids, new_hashes, _, _, _ = scan(target)
                 ids |= new_ids
                 hashes |= new_hashes
 
-    target = resolve_folder(spark, ARTSTATION_FOLDER)
-    print(f"\n=== ArtStation likes -> {os.path.basename(target)} ===")
-    gdl(["--download-archive", ARCHIVE_FILE, "--sleep-request", "0.5", "-D", target, ARTSTATION_LIKES])
+    art = None
+    if ARTSTATION_MODE in ("all", "main"):
+        target = resolve_folder(spark, ARTSTATION_FOLDER)
+        print(f"\n=== ArtStation likes -> {os.path.basename(target)} ===")
+        args = ["--download-archive", ARCHIVE_FILE, "--sleep-request", "0.5", "-D", target, ARTSTATION_LIKES]
+        if ARTSTATION_MODE == "main":   # only the first image of each liked project
+            save_json(FILTER_FILE, {"extractor": {"file-filter": "num == 1"}})
+            args = ["--config", FILTER_FILE] + args
+        had = image_count(target)
+        rc = gdl(args).returncode
+        art = (os.path.basename(target), image_count(target) - had, rc)
 
-    after_ids, after_hashes, after, _, _ = scan(spark)
+    after_ids, after_hashes, _, _, _ = scan(spark)
     save_json(KNOWN_FILE, {"ids": sorted(ids | after_ids), "hashes": sorted(hashes | after_hashes)})
     settings["first_run_done"] = True
     save_json(SETTINGS_FILE, settings)
 
-    added = {k: after[k] - before.get(k, 0) for k in after if after[k] > before.get(k, 0)}
+    problems = "  <- problems; scroll up for yellow/red lines"
     print("\n=== Done ===")
-    listed = planned + [os.path.basename(target)]
-    for folder in listed:
-        print(f"  {folder}: {added.get(folder, 0)} new")
-    for folder, n in sorted(added.items()):
-        if folder not in listed:
-            print(f"  {folder or '(top folder)'}: {n} new")
+    for name, pins, folder, new, rc in results:
+        print(f"  Pinterest \"{name}\"{pin_text(pins)} -> {folder}: {new} new{problems if rc else ''}")
     for name in missing:
         print(f"  Not downloaded: no Pinterest board called \"{name}\".")
     if missing and boards:
-        print("  Your boards are: " + ", ".join(n for n, _ in boards))
-        print("  Tell Claude which of these is which, and it will update the script.")
-    if added.get(TO_SORT):
+        print("  Your boards are: " + ", ".join(b[0] for b in boards))
+    if art:
+        print(f"  ArtStation likes -> {art[0]}: {art[1]} new{problems if art[2] else ''}")
+    else:
+        print("  ArtStation: paused (ARTSTATION_MODE is \"off\").")
+    if any(r[2].lower() == TO_SORT.lower() and r[3] for r in results):
         print(f"Move the images in \"{TO_SORT}\" into Photo-Figure or Photo-Portrait when you have a minute.")
     print("When Google Drive finishes syncing, press Refresh in Spark Studio.")
 
