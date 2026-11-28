@@ -249,6 +249,7 @@ def main():
 
     print("\nReading your Pinterest boards...")
     boards, problem = list_boards()
+    planned, missing = [], []
     if not boards:
         print("Couldn't read your Pinterest boards. Make sure you're logged in to Pinterest in "
               f"{BROWSER.title()}, then run this again.")
@@ -262,13 +263,19 @@ def main():
                 plan.append((name, url, rule["folder"]))
             else:
                 skipped.append(name)
-        for rule in BOARDS:
-            if not any(board_rule(n) is rule for n, _ in boards):
-                print(f"Note: no board called \"{rule['board']}\" was found.")
+        missing = [rule["board"] for rule in BOARDS
+                   if not rule.get("loose") and not any(board_rule(n) is rule for n, _ in boards)]
+        print(f"Found {len(boards)} boards.")
+        for name, _url, folder in plan:
+            print(f"  {name} -> {folder}")
+        for name in missing:
+            print(f"Note: no board called \"{name}\" was found.")
         if skipped:
             print("Not downloading these boards: " + ", ".join(skipped))
         for name, url, folder in plan:
             target = resolve_folder(spark, folder)
+            if os.path.basename(target) not in planned:
+                planned.append(os.path.basename(target))
             print(f"\n=== Pinterest \"{name}\" -> {os.path.basename(target)} ===")
             save_json(FILTER_FILE, {"extractor": {"file-filter": filter_expr(ids, hashes)}})
             gdl(["--config", FILTER_FILE, "--cookies-from-browser", BROWSER, "--download-archive", ARCHIVE_FILE,
@@ -289,13 +296,19 @@ def main():
 
     added = {k: after[k] - before.get(k, 0) for k in after if after[k] > before.get(k, 0)}
     print("\n=== Done ===")
-    if added:
-        for folder, n in sorted(added.items()):
+    listed = planned + [os.path.basename(target)]
+    for folder in listed:
+        print(f"  {folder}: {added.get(folder, 0)} new")
+    for folder, n in sorted(added.items()):
+        if folder not in listed:
             print(f"  {folder or '(top folder)'}: {n} new")
-        if any(k.lower() == TO_SORT.lower() for k in added):
-            print(f"Move the images in \"{TO_SORT}\" into Photo-Figure or Photo-Portrait when you have a minute.")
-    else:
-        print("  Nothing new. You're up to date.")
+    for name in missing:
+        print(f"  Not downloaded: no Pinterest board called \"{name}\".")
+    if missing and boards:
+        print("  Your boards are: " + ", ".join(n for n, _ in boards))
+        print("  Tell Claude which of these is which, and it will update the script.")
+    if added.get(TO_SORT):
+        print(f"Move the images in \"{TO_SORT}\" into Photo-Figure or Photo-Portrait when you have a minute.")
     print("When Google Drive finishes syncing, press Refresh in Spark Studio.")
 
 
